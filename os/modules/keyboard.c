@@ -6,9 +6,9 @@ KeyboardKey* KeyEventQueue = 0;
 size_t KeyEventQueueIdx = 0;
 Keyboard* KeyboardState = 0;
 
-extern char PollScancode(char* Out);
+extern void PollScancode(uint8_t* Out);
 
-const char TransLo[128] = 
+static char TransLo[128] = 
 {
     0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, '\t', 
     'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0, 'a', 's', 
@@ -16,7 +16,7 @@ const char TransLo[128] =
     'b', 'n', 'm', ',', '.', '/', 0, 0, 0, ' '
 };
 
-const char TransHi[128] = 
+static char TransHi[128] = 
 {
     0, 0, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 0, '\t', 
     'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0, 'A', 'S', 
@@ -24,7 +24,7 @@ const char TransHi[128] =
     'B', 'N', 'M', '<', '>', '?', 0, 0, 0, ' '
 };
 
-uint8_t TransformScancode(char Scancode) {
+uint8_t TransformScancode(uint8_t Scancode) {
     if (Scancode >= 128) return 0;
     uint8_t tl = TransLo[Scancode];
     
@@ -43,7 +43,7 @@ uint8_t TransformScancode(char Scancode) {
     return TransLo[Scancode];
 }
 
-static void ProcessScancode(char Scancode)
+static void ProcessScancode(uint8_t Scancode)
 {
     uint8_t Alternative = 0;
     
@@ -105,7 +105,7 @@ void StartKeyboard()
     KeyEventQueueIdx = 0;
     while (1)
     {
-        char Scancode;
+        uint8_t Scancode;
         PollScancode(&Scancode);
         if (Scancode != 0)
         {

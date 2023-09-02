@@ -22,7 +22,7 @@ void DrawClearFrame()
     }
 }
 
-void DrawText(int x, int y, const char* text, uint32_t col)
+void DrawText(int x, int y, char* text, uint32_t col)
 {
     for (int i = 0;text[i];i++)
     {
@@ -32,19 +32,19 @@ void DrawText(int x, int y, const char* text, uint32_t col)
             uint8_t ValY = ValP[iy];
             for (int ix = 0;ix < 8;ix++)
             {
-                int x = ix + i * 0x8 + x;
-                int y = iy + y;
+                int nx = ix + i * 0x8 + x;
+                int ny = iy + y;
                 uint8_t Val = (ValY >> ix) & 1;
                 if (!Val) 
                 {
-                    CtxBuff[(x + y * CtxW)] = 0;
+                    CtxBuff[(nx + ny * CtxW)] = 0;
                     continue;
                 }
-                if (x < 0) continue;
-                if (y < 0) continue;
-                if (x >= CtxW) continue;
-                if (y >= CtxH) continue;
-                CtxBuff[(x + y * CtxW)] = col;
+                if (nx < 0) continue;
+                if (ny < 0) continue;
+                if (nx >= CtxW) continue;
+                if (ny >= CtxH) continue;
+                CtxBuff[(nx + ny * CtxW)] = col;
             }
         }
     }
@@ -109,7 +109,7 @@ void DrawImageStencil(int x, int y, int w, int h, uint32_t* img)
     }
 }
 
-void DrawUpdate()
+void DrawUpdate(int x, int y)
 {
     Draw_Packet Packet;
     Packet.imagesSize = 1;
@@ -120,8 +120,8 @@ void DrawUpdate()
 
     Draw_ImageEntry Image;
     Image.image = CtxBuff;
-    Image.x = 0;
-    Image.y = 0;
+    Image.x = x;
+    Image.y = y;
     Image.w = CtxW;
     Image.h = CtxH;
 

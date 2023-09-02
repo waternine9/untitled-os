@@ -16,16 +16,15 @@ volatile void __attribute__((section(".startos"))) main()
     }
 
     Log("Starting keyboard...", LOG_INFO);
-    StartProc((uint64_t)StartKeyboard, 0x40000);
+    StartProc((uint64_t)StartKeyboard, 0x40000 | 0x100000000);
 
     Log("Starting window manager...", LOG_INFO);
-    StartProc((uint64_t)StartWindowManager, 0x40000);
+    StartProc((uint64_t)StartWindowManager, 0x40000 | 0x100000000);
 
     Log("Welcome to this OS!", LOG_SUCCESS);
 
-    int tick = 0;
     while (1)
     {
-        tick++;
+
     }
 }

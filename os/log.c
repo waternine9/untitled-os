@@ -20,15 +20,15 @@ void Log(char* Msg, LogSeverity Severity)
     if (Severity == LOG_INFO) text.col = 0x00FFFFFF;
     if (Severity == LOG_SUCCESS) text.col = 0x0065FF65;
 
-    char Buff[21];
-    for (int i = 0;i < 21;i++)
+    char Buff[200];
+    for (int i = 0;i < 200;i++)
     {
         Buff[i] = ' ';
     }
     Buff[0] = '[';
     Buff[14] = '.';
     Buff[19] = ']';
-    Buff[20] = 0;
+    Buff[199] = 0;
 
     float MS;
     GetMS(&MS);
@@ -73,7 +73,7 @@ void Log(char* Msg, LogSeverity Severity)
     DrawCall(&packet);
 
     CurY += 10;
-    CurY = CurY % 800;
+    CurY = CurY % 200;
 }
 
 void LogDisable()

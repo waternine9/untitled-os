@@ -93,9 +93,9 @@ void AddProcess(uint64_t ip, uint64_t size)
 {
     if (SchedRing[SchedRingIdx].Privilege == 1)
     {
-        uint8_t* Allocated = (uint8_t*)AllocVM(size);
+        uint8_t* Allocated = (uint8_t*)AllocVM(size & 0xFFFFFFFF);
         
-        for (int i = 0;i < size;i++)
+        for (int i = 0;i < (size & 0xFFFFFFFF);i++)
         {
             Allocated[i] = *(uint8_t*)(ip + i);
         }
@@ -111,7 +111,7 @@ void AddProcess(uint64_t ip, uint64_t size)
             SchedRing = NewRing;
         }
 
-        SchedRing[SchedRingSize].Privilege = 0;
+        SchedRing[SchedRingSize].Privilege = (size & (uint64_t)0x100000000) >> 32;
         SchedRing[SchedRingSize].cs = 0x20 | 3;
         SchedRing[SchedRingSize].ds = 0x28 | 3;
         SchedRing[SchedRingSize].rip = ip;
