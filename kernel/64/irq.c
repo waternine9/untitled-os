@@ -11,7 +11,7 @@ int SchedRingSize = 0;
 float MSTicks = 0; // IN MS
 SoftTSS* CHandlerIRQ0(SoftTSS* SaveState)
 {
-    MSTicks += 54.9254f;
+    MSTicks += 1000.0f / (1193182.0f) * 16000.0f;
 
     if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
     if (SchedRingIdx < 0) SchedRingIdx = 0;

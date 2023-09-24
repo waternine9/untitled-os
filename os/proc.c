@@ -7,11 +7,6 @@ extern void _ExitProc();
 void StartProc(uint64_t Addr, uint64_t Size)
 {
     _StartProc(Addr, Size);
-
-    float InitMS;
-    GetMS(&InitMS);
-    float Ms = 0.0f;
-    while (Ms - InitMS < 100.0f) GetMS(&Ms);
 }
 
 

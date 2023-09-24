@@ -58,6 +58,7 @@ extern void HandlerIRQ12();
 extern void HandlerIRQ13();
 extern void HandlerIRQ14();
 extern void HandlerIRQ15();
+extern void HandlerIVT70();
 
 void PageFault(void)
 {
@@ -72,6 +73,13 @@ void GeneralProtectionFault(void)
 void UnknownFault(void)
 {
 
+}
+
+uint8_t Int70Fired = 0;
+
+void CHandlerIVT70(void)
+{
+    Int70Fired = 1;
 }
 
 uint32_t TransformCol(uint32_t Col)
@@ -313,6 +321,14 @@ void IdtInit()
             IDTEntries[i].offset_3 = (((uint64_t)GeneralProtectionFaultS & 0xFFFFFFFF00000000ULL) >> 32);
             IDTEntries[i].offset_2 = (((uint64_t)GeneralProtectionFaultS & 0x00000000FFFF0000ULL) >> 16);
             IDTEntries[i].offset_1 = (((uint64_t)GeneralProtectionFaultS & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
+        }
+        else if (i == 0x70) // For NVME
+        {
+            IDTEntries[i].type_attributes = 0x8E;
+            IDTEntries[i].offset_3 = 0xFFFFFFFF;
+            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT70 & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT70 & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
         else if (i < 32) // UNKNOWN FAULT

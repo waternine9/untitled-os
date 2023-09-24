@@ -149,7 +149,7 @@ volatile void AllocUnMap(uint64_t vAddr, uint64_t Size)
     }
 }
 
-#define PHYS_TAKEN_SIZE (0x50000000 / 0x1000)
+#define PHYS_TAKEN_SIZE (0xD0000000 / 0x1000)
 #define PHYS_TAKEN_START 0x20000000
 
 static uint8_t PhysTaken[PHYS_TAKEN_SIZE]; // 4 KiB (Page) Blocks
@@ -211,6 +211,113 @@ volatile uint64_t AllocVM(uint64_t Size)
             else
             {
                 if (!AllocPage(Tier4, i, PAddr, 0, (1ULL << READWRITE_BIT) | (1ULL << USER_SUPERVISOR_BIT))) return 0;
+            }
+            PhysTaken[(PAddr - PHYS_TAKEN_START) / 0x1000] = 1;
+            i += 0x1000;
+            PAddr += 0x1000;
+        }
+
+        Flush();
+
+        return Con;
+
+        NextVAttemptAllocVM:
+    }
+
+    return 0;
+}
+
+volatile uint64_t AllocPhys(uint64_t Size)
+{
+    uint64_t MemMapSize = *(uint64_t*)0x7E01;
+    uint64_t* MemMap = 0x7E05;
+
+    uint64_t PAddr = 0;
+    uint64_t PAddrI = 0;
+
+    Size /= 0x1000;
+    Size += 1;
+
+    uint64_t StoreSize = Size;
+    if (StoreSize & (~(uint64_t)0b1111111111) != 0) StoreSize = (uint64_t)0b1111111111;
+
+    uint64_t Size0 = (StoreSize & (uint64_t)0b111) << 9;
+    uint64_t Size1 = ((StoreSize & (uint64_t)0b1111111000) >> 3) << 52;
+
+    for (uint64_t i = 0;i < PHYS_TAKEN_SIZE;i++)
+    {
+        uint64_t Con = i * 0x1000 + PHYS_TAKEN_START;
+        for (uint64_t j = 0;j < Size;j++)
+        {
+            if (PhysTaken[i++]) goto NextAttemptAllocPhys;
+        }
+        for (uint64_t k = 0;k < MemMapSize;k++)
+        {
+            if (MemMap[k * 2 + 0] < Con && MemMap[k * 2 + 0] + MemMap[k * 2 + 1] > Con + Size * 0x1000) goto FoundAllocPhys;
+        }
+        continue;
+        FoundAllocPhys:
+
+        PAddr = Con;
+        PAddrI = i;
+        break;
+
+        NextAttemptAllocPhys:
+    }
+    if (PAddr == 0) return 0;
+
+    uint64_t Con = PAddr;
+    for (uint64_t j = 0;j < Size;j++)
+    {
+        if (j == 0)
+        {
+            if (!AllocPage(Tier4, Con + j * 0x1000, PAddr, 0, (1ULL << READWRITE_BIT) | CACHE_DISABLE_BIT | Size0 | Size1)) return 0;
+        }
+        else
+        {
+            if (!AllocPage(Tier4, Con + j * 0x1000, PAddr, 0, (1ULL << READWRITE_BIT) | CACHE_DISABLE_BIT)) return 0;
+        }
+        PhysTaken[(PAddr - PHYS_TAKEN_START) / 0x1000] = 1;
+        PAddr += 0x1000;
+    }
+
+    Flush();
+
+    return Con;
+}
+
+volatile uint64_t AllocVMAtPhys(uint64_t pAddr, uint64_t Size)
+{
+    uint64_t PAddr = pAddr;
+    uint64_t PAddrI = (PAddr - PHYS_TAKEN_START) / 0x1000;
+
+    Size /= 0x1000;
+    Size += 1;
+
+    uint64_t StoreSize = Size;
+    if (StoreSize & (~(uint64_t)0b1111111111) != 0) StoreSize = (uint64_t)0b1111111111;
+
+    uint64_t Size0 = (StoreSize & (uint64_t)0b111) << 9;
+    uint64_t Size1 = ((StoreSize & (uint64_t)0b1111111000) >> 3) << 52;
+
+    for (uint64_t i = 0x10000000;i < 0x80000000;i += 0x1000)
+    {
+        uint64_t Con = i;
+        for (uint64_t j = 0;j < Size;j++)
+        {
+            if (!PageAvailable(Tier4, i, 0)) goto NextVAttemptAllocVM;
+            i += 0x1000;
+        }
+        i = Con;
+        for (uint64_t j = 0;j < Size;j++)
+        {
+            if (j == 0)
+            {
+                if (!AllocPage(Tier4, i, PAddr, 0, (1ULL << READWRITE_BIT) | (1ULL << CACHE_DISABLE_BIT) | Size0 | Size1)) return 0;
+            }
+            else
+            {
+                if (!AllocPage(Tier4, i, PAddr, 0, (1ULL << READWRITE_BIT) | (1ULL << CACHE_DISABLE_BIT))) return 0;
             }
             PhysTaken[(PAddr - PHYS_TAKEN_START) / 0x1000] = 1;
             i += 0x1000;

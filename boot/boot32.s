@@ -5,8 +5,12 @@
 section .boot
 
 global bootentry
-bootentry: jmp 0:entry
+bootentry: jmp entry0
 
+db "UNTITLED_OS"
+
+entry0:
+    jmp 0:entry
 ; Entry point:
 entry:
 
@@ -112,41 +116,11 @@ GDTData:
     db 0b10010010 ; Access
     db 0b11001111 ; Flags + Limit
     db 0x00       ; Base
-GDTCode64:
-    dw 0xFFFF     ; Limit
-    dw 0x0000     ; Base
-    db 0x00       ; Base
-    db 0b10011010 ; Access
-    db 0b10101111 ; Flags + Limit
-    db 0x00       ; Base
 GDTEnd:
 
 GDTDesc:
     .GDTSize dw GDTEnd - GDTStart - 1 ; GDT size 
     .GDTAddr dd GDTStart          ; GDT address
-
-GDT16Start:
-    dq 0
-GDT16Code: ; 16-bit code segment descriptor
-    dw 0xFFFF     ; Limit
-    dw 0x0000     ; Base
-    db 0x00       ; Base
-    db 0b10011010 ; Access
-    db 0b00001111 ; Flags + Limit
-    db 0x00       ; Base
-
-GDT16Data: ; 16-bit data segment descriptor
-    dw 0xFFFF     ; Limit
-    dw 0x0000     ; Base
-    db 0x00       ; Base
-    db 0b10010010 ; Access
-    db 0b00001111 ; Flags + Limit
-    db 0x00       ; Base
-GDT16End:
-
-GDT16Desc:
-    .GDTSize dw GDT16End - GDT16Start - 1
-    .GDTAddr dd GDT16Start
 
 times 0x1BE-($-$$) db 0
 

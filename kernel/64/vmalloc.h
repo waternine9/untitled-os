@@ -19,8 +19,10 @@ volatile bool AllocIdMap(uint64_t Addr, uint64_t Size, uint64_t Flags);
 volatile bool AllocMap(uint64_t vAddr, uint64_t pAddr, uint64_t Size, uint64_t Flags);
 volatile void AllocUnMap(uint64_t vAddr, uint64_t Size);
 volatile uint64_t AllocVM(uint64_t Size);
+volatile uint64_t AllocPhys(uint64_t Size); // Must return 4 KiB aligned address for NVMe driver, etc
 volatile void FreeVM(uint64_t vAddr);
 volatile uint64_t AllocVMAt(uint64_t vAddr, uint64_t Size);
+volatile uint64_t AllocVMAtPhys(uint64_t pAddr, uint64_t Size); // FOR DRIVERS
 volatile uint64_t AllocVMAtStack(uint64_t vAddr, uint64_t Size);
 volatile void AllocInit();
 

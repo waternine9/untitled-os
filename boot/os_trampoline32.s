@@ -18,6 +18,15 @@ kstart:
 
     cld
 
+; Reprogram the PIT to be 1.193182 / 16 MHz
+    cli 
+    mov al, 0b00110110
+    out 0x43, al
+    mov al, 0
+    out 0x40, al
+    mov al, 16
+    out 0x40, al
+
     mov dword [CurrentLBA], 4 + (0x2000 / 512)
     mov dword [CurrentLBAOs], 4 + (0xB000 / 512)
 
