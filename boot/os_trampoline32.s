@@ -32,7 +32,7 @@ kstart:
 
 ReadLoop:
     mov eax, [CurrentLBA]
-    cmp eax, 0x80
+    cmp eax, 0x200
     jl ReadSectorsV8086
 
 ; Now call the paging initializer
@@ -90,21 +90,6 @@ ReadLoop:
     mov ax, 0x30
     ltr ax
 
-    push rdx
-    push rcx
-    mov rdi, rcx
-    mov rsi, 0xB00000
-    mov rcx, 0x100000 / 8
-.Move:
-    mov rdx, [rsi]
-    mov [rdi], rdx
-    add rdi, 8
-    add rsi, 8
-    dec rcx
-    cmp rcx, 0
-    jg .Move
-    pop rcx
-    pop rdx
 
     mov dword [TSS + 0x4], esp
     mov dword [TSS + 0x8], 0xFFFFFFFF
@@ -124,16 +109,9 @@ ReadLoop:
     push rax
     push 0x20 | 3
     push rcx
-    mov dx, 0x21
-    mov al, 0
-    out dx, al 
-    in al, 0x80
-    mov dx, 0xA1
-    mov al, 0
-    out dx, al
 	iretq
 CurrentLBA: dd 4 + (0x2000 / 512)
-CurrentLBAOs: dd 4 + (0xB000 / 512)
+CurrentLBAOs: dd 4 + (0x40000 / 512)
 
 [BITS 32]
 IDT16:
@@ -219,7 +197,7 @@ ReadSectorsV8086:
 
     mov edi, 0xB00000
     mov eax, [CurrentLBAOs]
-    sub eax, 4 + (0xB000 / 512)
+    sub eax, 4 + (0x40000 / 512)
     imul eax, 512
     add edi, eax
     mov esi, 0x8400 + 4096 + 2048
@@ -328,7 +306,7 @@ times 0x2000 - ($ - $$) db 0
 
 incbin "kernel.img"
 
-times 0xB000 - ($ - $$) db 0
+times 0x40000 - ($ - $$) db 0
 
 [BITS 64]
 

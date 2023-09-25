@@ -50,3 +50,51 @@ global _ExitProc
 _ExitProc:
     mov rbx, 3
     int 0x80
+
+global ReadFile
+ReadFile:
+    mov rbx, 11
+    mov rcx, rsi
+    mov rsi, rdi
+    int 0x80
+    ret
+
+global WriteFile
+WriteFile:
+    mov rbx, 10
+    mov rcx, rsi
+    mov rsi, rdi
+    int 0x80
+    ret
+global GetFileSize
+GetFileSize:
+    mov rbx, 12
+    mov rcx, rsi
+    mov rsi, rdi
+    int 0x80
+    ret
+global ListFiles
+ListFiles:
+    mov rbx, 13
+    mov rcx, rsi
+    mov rsi, rdi
+    int 0x80
+    ret
+global MakeDir 
+MakeDir:
+    mov rbx, 7
+    mov rsi, rdi
+    int 0x80
+    ret
+global MakeFile
+MakeFile:
+    mov rbx, 8
+    mov rsi, rdi
+    int 0x80
+    ret
+global RemoveFileOrDir
+RemoveFileOrDir:
+    mov rbx, 9
+    mov rsi, rdi
+    int 0x80
+    ret

@@ -17,6 +17,7 @@
 
 #define NVME_OPCODE_CREATE_IO_SUBMISSION 0x1
 #define NVME_OPCODE_CREATE_IO_COMPLETION 0x5
+#define NVME_OPCODE_WRITE 0x1
 #define NVME_OPCODE_READ 0x2
 
 #define NVME_QUEUE_ENTRIES_SIZE 64
@@ -55,6 +56,7 @@ typedef struct
     int DoorbellStride;
     int NumEntries;
     int PageSize;
+    int OrigPageSize;
     int Tail;
     NVME_IO_Pair* IOPairs;
     int IOPairCount;
@@ -64,7 +66,8 @@ typedef struct
     NVME_Completion* AdminCompletion;
     bool IO;
 
-    uint32_t PrimaryNSID;
+    uint32_t NSIDs[32];
+    int NSIDCount;
 } NVME_Controller;
 
 NVME_Controller* NVMe_Controllers;
@@ -120,7 +123,7 @@ void CreateIOPair(NVME_Controller* Controller)
     Command.PRP1 = 0;
     Command.MetadataPtr = AllocPhys(0x2000);
     Command.CmdSpecific[0] = (Controller->IOPairCount + 1) | ((Pair.NumEntries - 1) << 16); // 16 entries - 1
-    Command.CmdSpecific[1] = 1 | 2 | (30 << 16);
+    Command.CmdSpecific[1] = 1 | (0 << 16);
     Command.CmdSpecific[2] = 0;
     Command.CmdSpecific[3] = 0;
     Command.CmdSpecific[4] = 0;
@@ -151,21 +154,25 @@ void CreateIOPair(NVME_Controller* Controller)
 void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Dest)
 {
     uint64_t* PRPList = AllocPhys(0x1000);
-    for (int i = 0;i < Num;i++)
+    for (int i = 1;i < (Num * 512) / Controller->PageSize;i++)
     {
-        PRPList[i] = Dest + Controller->PageSize * i;
+        PRPList[i - 1] = Dest + Controller->PageSize * i;
     }
     
     NVME_Command Command;
     Command.DWORD0 = NVME_OPCODE_READ;
-    Command.NSID = 1;
+    Command.NSID = Controller->NSIDs[0];
     Command.Reserved = 0;
     Command.MetadataPtr = AllocPhys(0x2000);
     
     Command.PRP0 = Dest;
-    if (Num > 1)
+    if (Num >= 2 * (Controller->PageSize / 512) - (LBA % (Controller->PageSize / 512)))
     {
         Command.PRP1 = (uint64_t)PRPList & 0xFFFFFFFFULL;
+    }
+    else if (Num >= 1 * (Controller->PageSize / 512) - (LBA % (Controller->PageSize / 512)))
+    {
+        Command.PRP1 = Dest + Controller->PageSize;
     }
     else
     {
@@ -174,12 +181,56 @@ void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64
 
     Command.CmdSpecific[0] = LBA;
     Command.CmdSpecific[1] = 0;
-    Command.CmdSpecific[2] = Num - 1; // Logical Block Count is 0 based
+    Command.CmdSpecific[2] = (Num - 1) & 0xFFFF; // Logical Block Count is 0 based
     Command.CmdSpecific[3] = 0;
     Command.CmdSpecific[4] = 0;
     Command.CmdSpecific[5] = 0;
 
     SendIOCommand(Controller, Command, &Controller->IOPairs[0], 1);
+
+    FreeVM(PRPList);
+    FreeVM(Command.MetadataPtr);
+}
+
+void WriteSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Src)
+{
+    uint64_t* PRPList = AllocPhys(0x1000);
+    for (int i = 1;i < (Num * 512) / Controller->PageSize;i++)
+    {
+        PRPList[i - 1] = Src + Controller->PageSize * i;
+    }
+    
+    NVME_Command Command;
+    Command.DWORD0 = NVME_OPCODE_WRITE;
+    Command.NSID = Controller->NSIDs[0];
+    Command.Reserved = 0;
+    Command.MetadataPtr = AllocPhys(0x2000);
+    
+    Command.PRP0 = Src;
+    if (Num >= 2 * (Controller->PageSize / 512) - (LBA % (Controller->PageSize / 512)))
+    {
+        Command.PRP1 = (uint64_t)PRPList & 0xFFFFFFFFULL;
+    }
+    else if (Num >= 1 * (Controller->PageSize / 512) - (LBA % (Controller->PageSize / 512)))
+    {
+        Command.PRP1 = Src + Controller->PageSize;
+    }
+    else
+    {
+        Command.PRP1 = 0;
+    }
+
+    Command.CmdSpecific[0] = LBA;
+    Command.CmdSpecific[1] = 0;
+    Command.CmdSpecific[2] = (Num - 1) & 0xFFFF; // Logical Block Count is 0 based
+    Command.CmdSpecific[3] = 0;
+    Command.CmdSpecific[4] = 0;
+    Command.CmdSpecific[5] = 0;
+
+    SendIOCommand(Controller, Command, &Controller->IOPairs[0], 1);
+
+    FreeVM(PRPList);
+    FreeVM(Command.MetadataPtr);
 }
 
 // For now, initialize just 1 NVMe device
@@ -254,12 +305,13 @@ void CheckNVMe(pci_device_path Path)
             CC |= 0b110U << 4;
             *(uint32_t*)(Controller.vBar0 + NVME_CC) = CC;
             
-            Controller.PageSize = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 48) & 0b1111;
-
+            Controller.OrigPageSize = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 48) & 0b1111;
+            Controller.PageSize = 1 << (12 + Controller.OrigPageSize);
+            
             // Set round robin arbitration mechanism
             *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) &= ~(0b111UL << 11);
             *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) &= ~(0b1111UL << 7);
-            *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) |= Controller.PageSize << 7;
+            *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) |= Controller.OrigPageSize << 7;
 
             *(volatile uint32_t*)(Controller.vBar0 + NVME_AQA) |= (NVME_QUEUE_ENTRIES_SIZE - 1) & 0xFFF;
             *(volatile uint32_t*)(Controller.vBar0 + NVME_AQA) |= ((NVME_QUEUE_ENTRIES_SIZE - 1) & 0xFFF) << 16;
@@ -283,7 +335,8 @@ void CheckNVMe(pci_device_path Path)
         }
         else
         {
-            Controller.PageSize = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 48) & 0b1111;
+            Controller.OrigPageSize = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 48) & 0b1111;
+            Controller.PageSize = 1 << (12 + Controller.OrigPageSize);
             Controller.AdminSubmission = *(volatile uint64_t*)(Controller.vBar0 + NVME_ASQ) & (~0xFFFULL);
             Controller.AdminSubmission = AllocVMAtPhys(Controller.AdminSubmission, 0x5000);
             Controller.AdminCompletion = *(volatile uint64_t*)(Controller.vBar0 + NVME_ACQ) & (~0xFFFULL);
@@ -292,6 +345,7 @@ void CheckNVMe(pci_device_path Path)
         }
 
         Controller.Tail = 0;
+        Controller.NSIDCount = 0;
         Controller.IOPairCount = 0;
         Controller.IOPairs = AllocVM(sizeof(NVME_IO_Pair) * 16);
         NVMe_Controllers[NVMe_ControllerCount] = Controller;
@@ -329,7 +383,13 @@ void CheckNVMe(pci_device_path Path)
         Identify.CmdSpecific[5] = 0;
         SendCommand(&NVMe_Controllers[NVMe_ControllerCount], Identify);
 
-        NVMe_Controllers[NVMe_ControllerCount].PrimaryNSID = *(uint32_t*)IdenOut;
+
+
+        for (int i = 0;i < 32;i++)
+        {
+            if (!((uint32_t*)IdenOut)[i]) break;
+            NVMe_Controllers[NVMe_ControllerCount].NSIDs[NVMe_Controllers[NVMe_ControllerCount].NSIDCount++] = ((uint32_t*)IdenOut)[i];
+        }
 
         // asm volatile("cli\nhlt" :: "a"(NVMe_Controllers[NVMe_ControllerCount].PrimaryNSID));
 
@@ -379,6 +439,17 @@ bool NVMERead(size_t Num, uint32_t LBA, void* Dest)
     {
         if (!NVMe_Controllers[j].IO) continue;
         ReadSectors(&NVMe_Controllers[j], LBA, Num, Dest);
+        return true;
+    }
+    return false;
+}
+
+bool NVMEWrite(size_t Num, uint32_t LBA, void* Src)
+{
+    for (int j = 0;j < NVMe_ControllerCount;j++)
+    {
+        if (!NVMe_Controllers[j].IO) continue;
+        WriteSectors(&NVMe_Controllers[j], LBA, Num, Src);
         return true;
     }
     return false;

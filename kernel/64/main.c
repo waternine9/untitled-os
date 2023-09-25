@@ -9,6 +9,7 @@
 
 // DRIVER INCLUDES
 #include "drivers/ps2/ps2.h"
+#include "drivers/fs/fs.h"
 #include "drivers/ide/ide.h"
 #include "drivers/nvme/nvme.h"
 
@@ -20,7 +21,7 @@ extern int SchedRingIdx;
 
 volatile uint64_t __attribute__((section(".main64"))) main64()
 {
-    for (uint64_t i = 0;i < 0x1000000;i += 1)
+    for (uint64_t i = 0;i < 0x800000;i += 1)
     {
         *(uint8_t*)(0xFFFFFFFFC1200000 + i) = 0;
     }
@@ -42,19 +43,8 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     NVMEInit();
     PicSetMask(0x0);
 
-    void* Dest = AllocPhys(0x10000);
-    for (int i = 0;i < 0x10000;i++)
-    {
-        *(uint8_t*)(Dest + i) = 0;
-    }
-    NVMERead(10, 0, Dest);
-    for (int i = 0;i < 0x10000;i += 4)
-    {
-        *(uint32_t*)(0xFFFFFFFF90000000 + i)  = *(uint32_t*)(Dest + i);
-    }
-    asm volatile ("cli\nhlt" :: "a"(Dest));
+    FSTryFormat();
 
-    if (AllocVMAt(0xB00000, 0x100000) == 0) asm volatile ("cli\nhlt" :: "a"(0x2454));
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) asm volatile ("cli\nhlt" :: "a"(0x2454));
     
     SchedRing = AllocVM(sizeof(SoftTSS) * 16);

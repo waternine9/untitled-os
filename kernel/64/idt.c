@@ -1,10 +1,12 @@
 #include "idt.h"
 #include "vmalloc.h"
 #include "softtss.h"
+#include "../file.h"
 #include "../draw.h"
 #include "../vbe.h"
 #include "font.h"
 #include "keyboard.h"
+#include "drivers/fs/fs.h"
 
 #define PRESENT_BIT 47
 #define DPL_BIT 45
@@ -281,6 +283,38 @@ uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
     else if (Code == 6)
     {
         *(char*)rsi = KeyQueueIdx > 0 ? KeyQueue[--KeyQueueIdx] : 0;
+    }
+    else if (Code == 7)
+    {
+        FSMkdir((char*)rsi);
+    }
+    else if (Code == 8)
+    {
+        FSMkfile((char*)rsi);
+    }
+    else if (Code == 9)
+    {
+        FSRemove((char*)rsi);
+    }
+    else if (Code == 10)
+    {
+        FSWriteFile((char*)rsi, (char*)Selector);
+    }
+    else if (Code == 11)
+    {
+        FileResponse Response;
+        Response.Data = FSReadFile((char*)rsi, &Response.BytesRead);
+        *(FileResponse*)Selector = Response;
+    }
+    else if (Code == 12)
+    {
+        *(size_t*)Selector = FSFileSize((char*)rsi);
+    }
+    else if (Code == 13)
+    {
+        FileListResponse Response;
+        Response.Data = FSListFiles((char*)rsi, &Response.NumEntries);
+        *(FileListResponse*)Selector = Response;
     }
     return 0;
 }

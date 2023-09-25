@@ -1,8 +1,8 @@
 #include "proc.h"
 #include "timer.h"
 
-extern void _StartProc(uint64_t, uint64_t);
-extern void _ExitProc();
+extern volatile void _StartProc(uint64_t, uint64_t);
+extern volatile void _ExitProc();
 
 void StartProc(uint64_t Addr, uint64_t Size)
 {

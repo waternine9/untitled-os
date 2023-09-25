@@ -3,7 +3,7 @@
 
 #include "include.h"
 
-void* malloc(uint64_t _Bytes);
-void free(void* _Block);
+void* volatile malloc(uint64_t _Bytes);
+void volatile free(void* _Block);
 
 #endif // MEM_H

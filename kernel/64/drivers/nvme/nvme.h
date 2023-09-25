@@ -5,5 +5,6 @@
 
 void NVMEInit();
 bool NVMERead(size_t Num, uint32_t LBA, void* Dest);
+bool NVMEWrite(size_t Num, uint32_t LBA, void* Src);
 
 #endif // NVME_H

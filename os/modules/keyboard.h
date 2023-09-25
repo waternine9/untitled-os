@@ -53,6 +53,6 @@ extern size_t KeyEventQueueIdx;
 extern Keyboard* KeyboardState;
 
 void StartKeyboard();
-KeyboardKey KeyboardPollKey();
+volatile KeyboardKey KeyboardPollKey();
 
 #endif // KEYBOARD_H

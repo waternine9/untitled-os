@@ -149,7 +149,7 @@ volatile void AllocUnMap(uint64_t vAddr, uint64_t Size)
     }
 }
 
-#define PHYS_TAKEN_SIZE (0xD0000000 / 0x1000)
+#define PHYS_TAKEN_SIZE (0xB0000000 / 0x1000)
 #define PHYS_TAKEN_START 0x20000000
 
 static uint8_t PhysTaken[PHYS_TAKEN_SIZE]; // 4 KiB (Page) Blocks
@@ -271,11 +271,11 @@ volatile uint64_t AllocPhys(uint64_t Size)
     {
         if (j == 0)
         {
-            if (!AllocPage(Tier4, Con + j * 0x1000, PAddr, 0, (1ULL << READWRITE_BIT) | CACHE_DISABLE_BIT | Size0 | Size1)) return 0;
+            if (!AllocPage(Tier4, Con + j * 0x1000, PAddr, 0, (1ULL << READWRITE_BIT) | (1ULL << USER_SUPERVISOR_BIT) | (1ULL << CACHE_DISABLE_BIT) | Size0 | Size1)) return 0;
         }
         else
         {
-            if (!AllocPage(Tier4, Con + j * 0x1000, PAddr, 0, (1ULL << READWRITE_BIT) | CACHE_DISABLE_BIT)) return 0;
+            if (!AllocPage(Tier4, Con + j * 0x1000, PAddr, 0, (1ULL << READWRITE_BIT) | (1ULL << USER_SUPERVISOR_BIT) | (1ULL << CACHE_DISABLE_BIT))) return 0;
         }
         PhysTaken[(PAddr - PHYS_TAKEN_START) / 0x1000] = 1;
         PAddr += 0x1000;
