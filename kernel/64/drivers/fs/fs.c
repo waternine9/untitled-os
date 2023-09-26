@@ -66,6 +66,10 @@ void FSFormat()
 	{
 		FirstData[i] = 0;
 	}
+	for (int i = 0;i < 1280;i++)
+	{
+		NVMEWrite(1, i, FirstData);
+	}
 	for (int i = 256;i < 256 + 4;i++)
 	{
 		FirstData[i] = FSRootName[i - 256];
@@ -408,6 +412,7 @@ void FSRemoveAt(uint64_t Block, char* Name)
 				if (Header.Name) FreeVM(Header.Name);
 				if (CurHeader.Name) FreeVM(CurHeader.Name);
 				NVMEWrite(1, CurHeader.DataLBA, Entries);
+				if (Header.Name) FreeVM(Header.Name);
 				return;
 			}
 			if (Header.Name) FreeVM(Header.Name);
@@ -695,8 +700,6 @@ bool FSRemove(char* Any)
 		}
 		else
 		{
-			uint64_t NextBlock = FSGetAnyInDir(CurrentBlock, TempBuf);
-			if (NextBlock == 0) return false; // File/dir doesnt exist
 			FSRemoveAt(CurrentBlock, TempBuf);
 			return true;
 		}
@@ -709,7 +712,7 @@ bool FSRemove(char* Any)
 		i++;
 	}
 }
-bool FSWriteFile(char* File, void* Data)
+bool FSWriteFile(char* File, void* Data, size_t Bytes)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -751,7 +754,7 @@ bool FSWriteFile(char* File, void* Data)
 			uint64_t NextBlock = FSGetAnyInDir(CurrentBlock, TempBuf);
 			if (NextBlock == 0) return false; // File doesnt exist
 			size_t FileSize = FSFileSizeAt(CurrentBlock);
-			FSWriteFileAt(NextBlock, TempBuf, Data, FileSize);
+			FSWriteFileAt(NextBlock, TempBuf, Data, Bytes);
 			return true;
 		}
 
@@ -912,7 +915,7 @@ FileListEntry* FSListFiles(char* Dir, size_t* NumEntries)
 			uint64_t NextBlock = CurrentBlock;
 			if (TempBuf[0])
 			{
-				NextBlock = FSGetDirInDir(CurrentBlock, TempBuf);
+				NextBlock = FSGetAnyInDir(CurrentBlock, TempBuf);
 				if (NextBlock == 0) return 0; // Dir doesnt exist
 			}
 			*NumEntries = FSDirectorySizeAt(NextBlock);

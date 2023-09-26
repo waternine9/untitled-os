@@ -23,14 +23,13 @@ typedef struct
     size_t NumEntries;
 } FileListResponse;
 
-/*
 typedef struct
 {
     char* Dir;
     
     // For write
     void* Data;
+    size_t Bytes;
 } FileRequest;
-*/
 
 #endif // FILE_H

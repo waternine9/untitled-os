@@ -72,10 +72,10 @@ jne .loop
 
 xor ebx, ebx
 add bx, [VbeModeInfo.XResolution]
-cmp word [VbeModeInfo.XResolution], 1920
+cmp word [VbeModeInfo.XResolution], 640
 jg .loop
 add bx, [VbeModeInfo.YResolution]
-cmp word [VbeModeInfo.YResolution], 1080
+cmp word [VbeModeInfo.YResolution], 490
 
 cmp ebx, [.BestScore]
 jl .loop

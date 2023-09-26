@@ -298,7 +298,8 @@ uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
     }
     else if (Code == 10)
     {
-        FSWriteFile((char*)rsi, (char*)Selector);
+        FileRequest* Req = (FileRequest*)Selector;
+        FSWriteFile((char*)rsi, Req->Data, Req->Bytes);
     }
     else if (Code == 11)
     {

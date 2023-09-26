@@ -109,6 +109,13 @@ ReadLoop:
     push rax
     push 0x20 | 3
     push rcx
+    mov al, 0
+    mov dx, 0x21
+    out dx, al
+    in al, 0x80
+    mov al, 0
+    mov dx, 0xA1
+    out dx, al
 	iretq
 CurrentLBA: dd 4 + (0x2000 / 512)
 CurrentLBAOs: dd 4 + (0x40000 / 512)

@@ -4,7 +4,7 @@
 #include "../kernel/file.h"
 
 extern volatile void ReadFile(char* Dir, FileResponse* Out);
-extern volatile void WriteFile(char* Dir, char* Data);
+extern volatile void WriteFile(char* Dir, FileRequest* Data);
 extern volatile void GetFileSize(char* Dir, size_t* Size);
 extern volatile void ListFiles(char* Dir, FileListResponse* Out);
 extern volatile void MakeDir(char* Dir);

@@ -39,7 +39,6 @@ void EventHandling()
                 CurCmd[CmdLen] = Key.ASCII;
                 CmdLen++;
             }
-            DrawRect(0, CurY * 8, CmdLen * 8, 8, 0xFF000000);
         }
         Key = KeyboardPollKey();
     }
@@ -50,10 +49,11 @@ void NewFrame(ShellContext* ShellCtx)
     float Ms;
     GetMS(&Ms);
 
-    DrawRect(0, 0, 1920, 1, 0xFFFFFFFF);
+    DrawRect(0, 0, 640, 1, 0xFFFFFFFF);
 
     int OldY = CurY;
     EventHandling();
+    DrawRect(0, CurY * 8, 640, 8, 0xFF000000);
     DrawText(0, OldY * 8, CurCmdPrefix, 0xFFFFFFFF);
     DrawText(8 * 3, OldY * 8, CurCmd, 0xFFFFFFFF);
     if (OldY != CurY)
@@ -68,9 +68,9 @@ void NewFrame(ShellContext* ShellCtx)
 
 void StartWindowManager()
 {
-    BackBuffer = (uint32_t*)malloc(1920 * (1080 - 200) * 4);
+    BackBuffer = (uint32_t*)malloc(640 * (480 - 200) * 4);
 
-    DrawSetContext(BackBuffer, 1920, 1080 - 200);
+    DrawSetContext(BackBuffer, 640, 480 - 200);
     DrawClearFrame();
 
     Log("Window manager started", LOG_SUCCESS);
