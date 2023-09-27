@@ -43,7 +43,7 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     NVMEInit();
 
     *(uint32_t*)0xFFFFFFFF90000000 = 0xAA0000AA;
-    FSFormat();
+    FSTryFormat();
 
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) asm volatile ("cli\nhlt" :: "a"(0x2454));
     *(uint32_t*)0xFFFFFFFF90000000 = 0x44444444;

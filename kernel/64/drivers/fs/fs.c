@@ -66,7 +66,7 @@ void FSFormat()
 	{
 		FirstData[i] = 0;
 	}
-	for (int i = 0;i < 1280;i++)
+	for (int i = 2;i < 1280;i++)
 	{
 		NVMEWrite(1, i, FirstData);
 	}

@@ -103,6 +103,13 @@ void StartKeyboard()
     KeyEventQueue = (KeyboardKey*)malloc(sizeof(KeyboardKey) * KEYBOARD_QUEUE_SIZE);
     KeyboardState = (Keyboard*)malloc(sizeof(Keyboard));
     KeyEventQueueIdx = 0;
+    KeyboardState->CapsLock = 0;
+    KeyboardState->LAlt = 0;
+    KeyboardState->LCtrl = 0;
+    KeyboardState->LShift = 0;
+    KeyboardState->RAlt = 0;
+    KeyboardState->RCtrl = 0;
+    KeyboardState->RShift = 0;
     while (1)
     {
         uint8_t Scancode;
