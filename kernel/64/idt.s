@@ -205,7 +205,6 @@ SyscallS:
     mov rdi, rax
 
     RESTORESTATE
-    
     iretq
 
 .dont_switch:

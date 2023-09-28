@@ -32,7 +32,7 @@ kstart:
 
 ReadLoop:
     mov eax, [CurrentLBA]
-    cmp eax, 0x200
+    cmp eax, 0x400
     jl ReadSectorsV8086
 
 ; Now call the paging initializer
@@ -69,7 +69,12 @@ ReadLoop:
 	mov gs, ax
 	mov ss, ax
     mov rsp, 0xFFFFFFFFC0200000
-
+    
+    mov ecx, 0x277
+    rdmsr
+    and eax, 0xFFFF00FF
+    or  eax, 0x00000100
+    wrmsr
     
 ; Now call the kernel
     call 0xFFFFFFFFC0000000

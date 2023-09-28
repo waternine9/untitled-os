@@ -81,8 +81,7 @@ extern float MSTicks;
 
 uint64_t ForceAlign(uint64_t _Ptr, uint64_t _Boundary)
 {
-    while ((_Ptr % _Boundary) != 0) _Ptr++;
-    return _Ptr;
+    return (_Ptr - (_Ptr % _Boundary)) + _Boundary;
 }
 
 void SendCommand(NVME_Controller* Controller, NVME_Command Cmd)
@@ -110,7 +109,7 @@ void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* 
 
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride) = Pair->Tail;
 
-    for (int i = 0;i < 10000;i++) IO_In8(0x80);
+    for (int i = 0;i < 1000;i++) IO_In8(0x80);
     
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride + 4) = Pair->Tail;
 }
@@ -484,7 +483,6 @@ void NVMEInit()
     NVMe_ControllerCount = 0;
     NVMe_Controllers = AllocVM(sizeof(NVME_Controller) * 256);
     ScanForNVMe();
-    //*(uint32_t*)0xFFFFFFFF90000000 = 0xFFFFFFFF;
 }
 
 bool NVMERead(size_t Num, uint32_t LBA, void* Dest)

@@ -1,6 +1,9 @@
 #include "shell.h"
 #include "../../filecall.h"
 #include "../../drawman.h"
+#include "../../proc.h"
+#include "../../log.h"
+#include "bf/bf.h"
 
 void ShellCmd_Ls(ShellContext* Ctx, char* Dir)
 {
@@ -9,8 +12,48 @@ void ShellCmd_Ls(ShellContext* Ctx, char* Dir)
     ListFiles(Dir, &Response);
     for (int i = 0;i < Response.NumEntries;i++)
     {
-        DrawText(0, (Ctx->ScanY++) * 8, Response.Data[i].Name, Response.Data[i].IsDir ? 0xFF00FF00 : 0xFF0000FF);
+        DrawText(0, (Ctx->ScanY++) * 8, Response.Data[i].Name, Response.Data[i].IsDir ? 0xFF00FF00 : 0xFF3333FF);
     }
+}
+
+bool IsCharacter(char C)
+{
+    return C >= 32 || C == '\n' || C == '\t';
+}
+
+void ShellCmd_Cat(ShellContext* Ctx, char* Dir)
+{
+    Ctx->ScanY++;
+    FileResponse Response;
+    ReadFile(Dir, &Response);
+    if (Response.Data == 0) return;
+    int CharsPrinted = 0;
+    for (int i = 0;i < Response.BytesRead;i++)
+    {
+        if (IsCharacter(((char*)Response.Data)[i]))
+        {
+            CharsPrinted++;
+            char Buf[2];
+            Buf[0] = ((char*)Response.Data)[i];
+            Buf[1] = 0;
+            if (Buf[0] == '\n')
+            {
+                Ctx->ScanY++;
+                CharsPrinted = 0;
+            }
+            else if (Buf[0] == '\t')
+            {
+                CharsPrinted += 4;
+            }
+            else
+            {
+                DrawText(((CharsPrinted - 1) % 256) * 8, Ctx->ScanY * 8, Buf, 0xFFFFFFFF);
+                if (CharsPrinted % 256 == 0) Ctx->ScanY++;
+            }
+        }
+    }
+    free(Response.Data);
+    Ctx->ScanY++;
 }
 
 void ShellCmd_Write(ShellContext* Ctx, char* Dir)
@@ -41,6 +84,26 @@ void ShellCmd_Touch(ShellContext* Ctx, char* Dir)
 {
     Ctx->ScanY++;
     MakeFile(Dir);
+}
+
+static FileResponse BFResponse;
+
+void _BFHandler()
+{
+    Log("Running BF file...", LOG_INFO);
+    BFRunSource(StrFromArray(BFResponse.Data, BFResponse.BytesRead));
+    ExitProc();
+}
+
+void ShellCmd_Bf(ShellContext* Ctx, char* Dir)
+{
+    Ctx->ScanY++;
+    FileResponse Response;
+    ReadFile(Dir, &Response);
+    if (Response.Data == 0) return;
+    BFResponse = Response;
+    
+    StartProc(_BFHandler, 0x40000ULL | 0x100000000ULL); 
 }
 void ShellCmd_Rm(ShellContext* Ctx, char* Dir)
 {
@@ -76,5 +139,7 @@ void ShellProcessCommand(char* Cmd, ShellContext* Ctx)
     else if (ShellStrcmp(Cmd, "mkdir")) ShellCmd_Mkdir(Ctx, Cmd + CmdSize + 1);
     else if (ShellStrcmp(Cmd, "touch")) ShellCmd_Touch(Ctx, Cmd + CmdSize + 1);
     else if (ShellStrcmp(Cmd, "write")) ShellCmd_Write(Ctx, Cmd + CmdSize + 1);
+    else if (ShellStrcmp(Cmd, "cat")) ShellCmd_Cat(Ctx, Cmd + CmdSize + 1);
+    else if (ShellStrcmp(Cmd, "bf")) ShellCmd_Bf(Ctx, Cmd + CmdSize + 1);
     else ShellCmdNotFound(Ctx);
 }

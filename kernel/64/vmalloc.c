@@ -149,7 +149,7 @@ volatile void AllocUnMap(uint64_t vAddr, uint64_t Size)
     }
 }
 
-#define PHYS_TAKEN_SIZE (0xB0000000 / 0x1000)
+#define PHYS_TAKEN_SIZE (0x80000000 / 0x1000)
 #define PHYS_TAKEN_START 0x20000000
 
 static uint8_t PhysTaken[PHYS_TAKEN_SIZE]; // 4 KiB (Page) Blocks
@@ -176,7 +176,11 @@ volatile uint64_t AllocVM(uint64_t Size)
         uint64_t Con = i * 0x1000 + PHYS_TAKEN_START;
         for (uint64_t j = 0;j < Size;j++)
         {
-            if (PhysTaken[i++]) goto NextAttemptAllocVM;
+            if (PhysTaken[i++]) 
+            {
+                i--;
+                goto NextAttemptAllocVM;
+            }
         }
         for (uint64_t k = 0;k < MemMapSize;k++)
         {
@@ -249,7 +253,11 @@ volatile uint64_t AllocPhys(uint64_t Size)
         uint64_t Con = i * 0x1000 + PHYS_TAKEN_START;
         for (uint64_t j = 0;j < Size;j++)
         {
-            if (PhysTaken[i++]) goto NextAttemptAllocPhys;
+            if (PhysTaken[i++]) 
+            {
+                i--; 
+                goto NextAttemptAllocPhys;
+            }
         }
         for (uint64_t k = 0;k < MemMapSize;k++)
         {

@@ -125,9 +125,9 @@ void AddProcess(uint64_t ip, uint64_t size)
         SchedRing[SchedRingSize].cs = 0x20 | 3;
         SchedRing[SchedRingSize].ds = 0x28 | 3;
         SchedRing[SchedRingSize].rip = ip;
-        SchedRing[SchedRingSize].rsp = AllocVM(0x4000) + 0x4000;
+        SchedRing[SchedRingSize].rsp = AllocVM(0x40000) + 0x40000;
         SchedRing[SchedRingSize].CodeStart = Allocated;
-        SchedRing[SchedRingSize].StackStart = SchedRing[SchedRingSize].rsp - 0x4000;
+        SchedRing[SchedRingSize].StackStart = SchedRing[SchedRingSize].rsp - 0x40000;
         SchedRing[SchedRingSize].rflags = 0x200;
         SchedRingSize++;
     }

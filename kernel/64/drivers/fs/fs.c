@@ -53,7 +53,7 @@ bool FSIsFormatted()
 void FSFormat()
 {
 	char* FirstData = AllocPhys(0x1000);
-	for (int i = 0;i < 1024;i++)
+	for (int i = 0;i < 4096;i++)
 	{
 		FirstData[i] = 0;
 	}
@@ -62,13 +62,13 @@ void FSFormat()
 		FirstData[i] = FSSignature[i];
 	}
 	NVMEWrite(1, 0, FirstData);
-	for (int i = 0;i < 1024;i++)
+	for (int i = 0;i < 4096;i++)
 	{
 		FirstData[i] = 0;
 	}
-	for (int i = 2;i < 1280;i++)
+	for (int i = 2;i < 0x1000;i += 2)
 	{
-		NVMEWrite(1, i, FirstData);
+		NVMEWrite(2, i, FirstData);
 	}
 	for (int i = 256;i < 256 + 4;i++)
 	{
@@ -76,7 +76,7 @@ void FSFormat()
 	}
  	*(uint64_t*)FirstData |= FS_DIRFLAG_ISDIR << FS_DIRFLAG_SHIFT;
 	*(uint64_t*)FirstData |= FS_VALID_ISVALID << FS_VALID_SHIFT;
-	NVMEWrite(2, 1, FirstData);
+	NVMEWrite(2, 4, FirstData);
 }
 
 void FSTryFormat()
@@ -90,13 +90,13 @@ void FSTryFormat()
 FSBlockHeader FSQueryHeader(int Block)
 {
 	uint64_t* FirstData = AllocPhys(0x1000);
-	NVMERead(1, 1 + Block * 2, FirstData);
+	NVMERead(1, 4 + Block * 2, FirstData);
 	FSBlockHeader Header;
 	Header.IsDir = (*FirstData >> FS_DIRFLAG_SHIFT) & FS_DIRFLAG_MASK;
 	Header.NextBlock = (*FirstData >> FS_NEXTBLOCK_SHIFT) & FS_NEXTBLOCK_MASK;
-	Header.DataLBA = 1 + Block * 2 + 1;
+	Header.DataLBA = 4 + Block * 2 + 1;
 	Header.Valid = (*FirstData >> FS_VALID_SHIFT) & FS_VALID_MASK;
-	if (Header.Valid)
+	if (((char*)FirstData)[256])
 	{
 		Header.Name = AllocPhys(256);
 		Header.Name[255] = 0;
@@ -113,14 +113,15 @@ FSBlockHeader FSQueryHeader(int Block)
 	return Header;
 }
 
-void FSFormatBlock(int Block)
+void FSFormatBlock(uint64_t Block)
 {
-	uint8_t FirstData[512];
-	for (int i = 0;i < 512;i++)
+	char* FirstData = AllocVM(0x1000);
+	for (int i = 0;i < 0x1000;i++)
 	{
 		FirstData[i] = 0;
 	}
-	NVMEWrite(1, 1 + Block * 2 + 1, FirstData);
+	NVMEWrite(2, 4 + Block * 2, FirstData);
+	FreeVM(FirstData);
 }
 
 void FSSetHeader(int Block, FSBlockHeader Header)
@@ -146,7 +147,7 @@ void FSSetHeader(int Block, FSBlockHeader Header)
 			FirstData[i + 256] = Header.Name[i];
 		}
 	}
-	NVMEWrite(1, 1 + Block * 2, FirstData);
+	NVMEWrite(1, 4 + Block * 2, FirstData);
 }
 
 bool FSStrcmp(char* x, char* y)
@@ -229,14 +230,52 @@ uint64_t FSGetAnyInDir(uint64_t Block, char* Name)
 	return 0;
 }
 
+uint64_t FSGetFileInDir(uint64_t Block, char* Name)
+{
+	FSBlockHeader CurHeader = FSQueryHeader(Block);
+	uint64_t* Entries = AllocPhys(512);
+	NVMERead(1, CurHeader.DataLBA, Entries);
+
+	for (int i = 0; i < 256 / 8 - 1;i++)
+	{
+		if ((Entries[i] >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK)
+		{
+			FSBlockHeader EntryHeader = FSQueryHeader((Entries[i] >> FS_ENTRY_MYBLOCK_SHIFT) & FS_ENTRY_MYBLOCK_MASK);
+			if (EntryHeader.Name) 
+			{
+				if (EntryHeader.IsDir) 
+				{
+					if (EntryHeader.Name) FreeVM(EntryHeader.Name);
+					continue;
+				}
+				if (FSStrcmp(EntryHeader.Name, Name))
+				{
+					uint64_t NextBlock = Entries[i];
+					FreeVM(Entries);
+					if (EntryHeader.Name) FreeVM(EntryHeader.Name);
+					return (NextBlock >> FS_ENTRY_MYBLOCK_SHIFT) & FS_ENTRY_MYBLOCK_MASK;
+				}
+				FreeVM(EntryHeader.Name);
+			}
+		}
+	}
+
+
+	uint64_t NextBlock = Entries[256 / 8 - 1];
+	FreeVM(Entries);
+	if (CurHeader.Name) FreeVM(CurHeader.Name);
+	if ((NextBlock >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK) return FSGetAnyInDir((NextBlock >> FS_ENTRY_MYBLOCK_SHIFT) & FS_ENTRY_MYBLOCK_MASK, Name);
+	return 0;
+}
+
 uint64_t FSAllocBlock()
 {
-	for (uint64_t i = 1;i < 0xFFFFFFFF;i++)
+	for (uint64_t i = 4;i < 0xFFFFFFFFULL;i += 2)
 	{
-		FSBlockHeader CurHeader = FSQueryHeader(i);
-		if (!CurHeader.Valid) 
+		FSBlockHeader CurHeader = FSQueryHeader((i - 4) / 2);
+		if (!CurHeader.Valid)
 		{
-			return i;
+			return (i - 4) / 2;
 		}
 	}
 	return 0;
@@ -254,6 +293,7 @@ void FSMkdirAt(uint64_t Block, char* Name)
 			Entries[i] |= 1ULL << FS_ENTRY_VALID_SHIFT;
 			uint64_t Block = FSAllocBlock();
 			if (Block == 0) return;
+			FSFormatBlock(Block);
 			Entries[i] |= Block << FS_ENTRY_MYBLOCK_SHIFT;
 			NVMEWrite(1, CurHeader.DataLBA, Entries);
 			FSBlockHeader Header;
@@ -304,6 +344,7 @@ void FSMkfileAt(uint64_t Block, char* Name)
 			Entries[i] |= 1ULL << FS_ENTRY_VALID_SHIFT;
 			uint64_t Block = FSAllocBlock();
 			if (Block == 0) return;
+			FSFormatBlock(Block);
 			Entries[i] |= Block << FS_ENTRY_MYBLOCK_SHIFT;
 			NVMEWrite(1, CurHeader.DataLBA, Entries);
 			FSBlockHeader Header;
@@ -425,20 +466,19 @@ void FSRemoveAt(uint64_t Block, char* Name)
 	if ((NextBlock >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK) FSRemoveAt((NextBlock >> FS_ENTRY_MYBLOCK_SHIFT) & FS_ENTRY_MYBLOCK_MASK, Name);
 }
 
-void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Bytes)
+void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Sectors)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
+	if (CurHeader.Name) FreeVM(CurHeader.Name);
 	if (!CurHeader.Valid) return;
 	if (CurHeader.IsDir) return;
-	if (Bytes == 0) return;
+	if (Sectors == 0) return;
 	while (true)
 	{
 		NVMEWrite(1, CurHeader.DataLBA, Data);
-		int Sectors = Bytes / 512;
-		
+		Sectors--;
 		if (Sectors == 0) break;
 		
-		Bytes -= 512;
 		Data += 512;
 
 		if (CurHeader.NextBlock > 0) Block = CurHeader.NextBlock;
@@ -448,51 +488,51 @@ void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Bytes)
 			FSBlockHeader Header;
 			Header.Valid = true;
 			Header.NextBlock = 0;
-			Header.Name = Name;
+			Header.Name = 0;
 			Header.IsDir = false;
 			FSSetHeader(CurHeader.NextBlock, Header);
 			FSSetHeader(Block, CurHeader);
 			Block = CurHeader.NextBlock;
 		}
 
-		if (CurHeader.Name) FreeVM(CurHeader.Name);
 		CurHeader = FSQueryHeader(Block);
+		if (CurHeader.Name) FreeVM(CurHeader.Name);
 	}
-	if (CurHeader.Name) FreeVM(CurHeader.Name);
 }
 
 
-size_t FSReadFileAt(uint64_t Block, void* Data, size_t Bytes)
+size_t FSReadFileAt(uint64_t Block, void* Data, size_t Sectors)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
+	if (CurHeader.Name) FreeVM(CurHeader.Name);
 	if (!CurHeader.Valid) return 0;
 	if (CurHeader.IsDir) return 0;
-	if (Bytes == 0) return 0;
+	if (Sectors == 0) return 0;
 	size_t ReadBytes = 0;
+	int i = 0;
 	while (true)
 	{
+		ReadBytes += 512;
+		i++;
 		NVMERead(1, CurHeader.DataLBA, Data);
-		int Sectors = Bytes / 512;
-		
+		Sectors--;
 		if (Sectors == 0) break;
 		
-		Bytes -= 512;
-		ReadBytes += 512;
 		Data += 512;
 
 		if (CurHeader.NextBlock == 0) break;
 		Block = CurHeader.NextBlock;
 
-		if (CurHeader.Name) FreeVM(CurHeader.Name);
-		CurHeader = FSQueryHeader(Block);
+		CurHeader = FSQueryHeader(Block); 
 	}
-	if (CurHeader.Name) FreeVM(CurHeader.Name);
+	//asm volatile ("cli\nhlt" :: "a"(0x1212), "b"(ReadBytes));
 	return ReadBytes;
 }
 
 size_t FSFileSizeAt(uint64_t Block)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
+	if (CurHeader.Name) FreeVM(CurHeader.Name);
 	if (!CurHeader.Valid) return 0;
 	if (CurHeader.IsDir) return 0;
 	size_t OutBytes = 0;
@@ -500,10 +540,9 @@ size_t FSFileSizeAt(uint64_t Block)
 	{
 		OutBytes += 512;
 		if (CurHeader.NextBlock == 0) break;
-		if (CurHeader.Name) FreeVM(CurHeader.Name);
+		Block = CurHeader.NextBlock;
 		CurHeader = FSQueryHeader(Block);
 	}
-	if (CurHeader.Name) FreeVM(CurHeader.Name);
 	return OutBytes;
 }
 
@@ -751,10 +790,9 @@ bool FSWriteFile(char* File, void* Data, size_t Bytes)
 		}
 		else
 		{
-			uint64_t NextBlock = FSGetAnyInDir(CurrentBlock, TempBuf);
+			uint64_t NextBlock = FSGetFileInDir(CurrentBlock, TempBuf);
 			if (NextBlock == 0) return false; // File doesnt exist
-			size_t FileSize = FSFileSizeAt(CurrentBlock);
-			FSWriteFileAt(NextBlock, TempBuf, Data, Bytes);
+			FSWriteFileAt(NextBlock, TempBuf, Data, Bytes / 512 + 1);
 			return true;
 		}
 
@@ -800,17 +838,17 @@ void* FSReadFile(char* File, size_t* BytesRead)
 		if (!End)
 		{
 			uint64_t NextBlock = FSGetDirInDir(CurrentBlock, TempBuf);
-			if (NextBlock == 0) return false; // Dir doesnt exist
+			if (NextBlock == 0) return 0; // Dir doesnt exist
 			CurrentBlock = NextBlock;
 		}
 		else
 		{
-			uint64_t NextBlock = FSGetAnyInDir(CurrentBlock, TempBuf);
-			if (NextBlock == 0) return false; // File doesnt exist
-			size_t FileSize = FSFileSizeAt(CurrentBlock);
-			void* Out = AllocPhys(FileSize);
+			uint64_t NextBlock = FSGetFileInDir(CurrentBlock, TempBuf);
+			if (NextBlock == 0) return 0; // File doesnt exist
+			size_t FileSize = FSFileSizeAt(NextBlock) / 512;
+			void* Out = AllocPhys(FileSize * 512 * 4);
 			*BytesRead = FSReadFileAt(NextBlock, Out, FileSize);
-			return true;
+			return Out;
 		}
 
 		for (int i = 0;i < 256;i++)
@@ -862,7 +900,7 @@ size_t FSFileSize(char* File)
 		{
 			uint64_t NextBlock = FSGetAnyInDir(CurrentBlock, TempBuf);
 			if (NextBlock == 0) return 0; // File doesnt exist
-			return FSFileSizeAt(CurrentBlock);
+			return FSFileSizeAt(NextBlock);
 		}
 
 		for (int i = 0;i < 256;i++)

@@ -23,21 +23,21 @@ void EventHandling()
         {
             if (Key.Scancode == KEY_BACKSPACE)
             {
-                CurCmd[CmdLen--] = 0;
+                CmdLen--;
                 if (CmdLen < 0) CmdLen = 0;
+                CurCmd[CmdLen] = 0;
             }
-            else if (Key.ASCII == '\n')
+            else if (Key.ASCII)
             {
-                CurY++;
-            }
-            else if (CmdLen < 255)
-            {
-                char Buf[2];
-                Buf[0] = Key.ASCII;
-                Buf[1] = 0;
-                Log(Buf, LOG_WARNING);
-                CurCmd[CmdLen] = Key.ASCII;
-                CmdLen++;
+                if (Key.ASCII == '\n')
+                {
+                    CurY++;
+                }
+                else if (CmdLen < 255)
+                {
+                    CurCmd[CmdLen] = Key.ASCII;
+                    CmdLen++;
+                }
             }
         }
         Key = KeyboardPollKey();
@@ -49,11 +49,12 @@ void NewFrame(ShellContext* ShellCtx)
     float Ms;
     GetMS(&Ms);
 
-    DrawRect(0, 0, 640, 1, 0xFFFFFFFF);
+    DrawRect(0, 0, 1920, 1, 0xFFFFFFFF);
 
     int OldY = CurY;
     EventHandling();
-    DrawRect(0, CurY * 8, 640, 8, 0xFF000000);
+    CurY %= 100;
+    DrawRect(0, CurY * 8, 1920, 8, 0xFF000000);
     DrawText(0, OldY * 8, CurCmdPrefix, 0xFFFFFFFF);
     DrawText(8 * 3, OldY * 8, CurCmd, 0xFFFFFFFF);
     if (OldY != CurY)
@@ -66,11 +67,21 @@ void NewFrame(ShellContext* ShellCtx)
     }
 }
 
+void WMPrintStr(char* Str)
+{
+    Log(Str, LOG_WARNING);
+}
+
+void WMPrintChar(char Char)
+{ 
+    LogChar(Char, LOG_INFO);
+}
+
 void StartWindowManager()
 {
-    BackBuffer = (uint32_t*)malloc(640 * (480 - 200) * 4);
+    BackBuffer = (uint32_t*)malloc(1920 * (1080 - 200) * 4);
 
-    DrawSetContext(BackBuffer, 640, 480 - 200);
+    DrawSetContext(BackBuffer, 1920, 1080 - 200);
     DrawClearFrame();
 
     Log("Window manager started", LOG_SUCCESS);
