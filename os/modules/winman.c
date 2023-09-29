@@ -92,7 +92,7 @@ void StartWindowManager()
     {
         NewFrame(&ShellCtx);
 
-        DrawUpdate(0, 200);
+        DrawUpdate(0, 400);
     }
 
     ExitProc();

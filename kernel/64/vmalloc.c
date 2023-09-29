@@ -153,6 +153,8 @@ volatile void AllocUnMap(uint64_t vAddr, uint64_t Size)
 #define PHYS_TAKEN_START 0x20000000
 
 static uint8_t PhysTaken[PHYS_TAKEN_SIZE]; // 4 KiB (Page) Blocks
+static size_t PhysTakenCache = 0;
+static size_t VmCache = 0;
 
 volatile uint64_t AllocVM(uint64_t Size)
 {
@@ -171,7 +173,7 @@ volatile uint64_t AllocVM(uint64_t Size)
     uint64_t Size0 = (StoreSize & (uint64_t)0b111) << 9;
     uint64_t Size1 = ((StoreSize & (uint64_t)0b1111111000) >> 3) << 52;
 
-    for (uint64_t i = 0;i < PHYS_TAKEN_SIZE;i++)
+    for (uint64_t i = PhysTakenCache;i < PHYS_TAKEN_SIZE;i++)
     {
         uint64_t Con = i * 0x1000 + PHYS_TAKEN_START;
         for (uint64_t j = 0;j < Size;j++)
@@ -197,7 +199,9 @@ volatile uint64_t AllocVM(uint64_t Size)
     }
     if (PAddr == 0) return 0;
 
-    for (uint64_t i = 0x10000000;i < 0x80000000;i += 0x1000)
+    PhysTakenCache = PAddrI;
+
+    for (uint64_t i = VmCache ? VmCache : 0x10000000;i < 0x80000000;i += 0x1000)
     {
         uint64_t Con = i;
         for (uint64_t j = 0;j < Size;j++)
@@ -223,6 +227,7 @@ volatile uint64_t AllocVM(uint64_t Size)
 
         Flush();
 
+        VmCache = Con + Size * 0x1000;
         return Con;
 
         NextVAttemptAllocVM:
@@ -348,6 +353,9 @@ volatile void FreeVM(uint64_t vAddr)
     uint64_t Size0 = (Page >> 9) & 0b111;
     uint64_t Size1 = (Page >> 52) & 0b1111111;
 
+    if (vAddr < VmCache) VmCache = vAddr;
+    PhysTakenCache = 0;
+
     if (Size0 == 0 && Size1 == 0) return;
 
     uint64_t Size = (Size1 << 3) | Size0;
@@ -394,6 +402,9 @@ volatile void AllocInit()
 {
     AllocOffset = *(uint32_t*)0x7FF0;
     Tier4 = 0x10000000;
+
+    VmCache = 0;
+    PhysTakenCache = 0;
 
     for (int i = 0;i < PHYS_TAKEN_SIZE;i++)
     {

@@ -92,7 +92,7 @@ void _BFHandler()
 {
     Log("Running BF file...", LOG_INFO);
     BFRunSource(StrFromArray(BFResponse.Data, BFResponse.BytesRead));
-    ExitProc();
+    //ExitProc();
 }
 
 void ShellCmd_Bf(ShellContext* Ctx, char* Dir)
@@ -103,7 +103,8 @@ void ShellCmd_Bf(ShellContext* Ctx, char* Dir)
     if (Response.Data == 0) return;
     BFResponse = Response;
     
-    StartProc(_BFHandler, 0x40000ULL | 0x100000000ULL); 
+    _BFHandler();
+    //StartProc(_BFHandler, 0x40000ULL | 0x100000000ULL); 
 }
 void ShellCmd_Rm(ShellContext* Ctx, char* Dir)
 {

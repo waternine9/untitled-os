@@ -109,7 +109,7 @@ void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* 
 
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride) = Pair->Tail;
 
-    for (int i = 0;i < 1000;i++) IO_In8(0x80);
+    for (int i = 0;i < 4000;i++) IO_In8(0x80);
     
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride + 4) = Pair->Tail;
 }

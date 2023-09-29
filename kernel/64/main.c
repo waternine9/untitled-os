@@ -31,7 +31,7 @@ static const char* ExampleCode = "int:cos(int:x)"
 "int:sin(int:x)"
 "{"
 "    x = x + (3 << 9);"
-"    return(cos(x););"
+"    return(cos(x));"
 "}"
 ""
 "int:Main()"
@@ -40,8 +40,7 @@ static const char* ExampleCode = "int:cos(int:x)"
 "    int:B = 0;"
 "    while (1 < 2)"
 "    {"
-"        print(48);print(10);"
-/*"        int:counter = 0;"
+"        int:counter = 0;"
 "        for (int:theta = 0;theta < 2000;theta = theta + 4)"
 "        {"
 "            for (int:phi = 0;phi < 2000;phi = phi + 4)"
@@ -79,17 +78,21 @@ static const char* ExampleCode = "int:cos(int:x)"
 "                    print(95);"
 "                };"
 "                counter = counter + 1;"
-"                if (counter > 39)"
+"                if (counter > 40)"
 "                {"
-"                    print(10);"
 "                    counter = 0;"
+"                    print(10);"
+"                };"
+"                if (counter < 40)"
+"                {"
+"                    print(32);"
 "                };"
 "            };"
 "        };"
 "        A = A + 40;"
 "        B = B + 16;"
 "        print(10);"
-"        print(10);"*/
+"        print(10);"
 "    };"
 "};";
 /*static const char* ExampleCode = "int:Main()\n"
@@ -144,9 +147,7 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     for (int i = 0;i < 0x1000;i++) Buf[i] = 0;
     for (int i = 0;ExampleCode[i];i++) Buf[i] = ExampleCode[i];
 
-    FSWriteFile("home/helloworld.bf", Buf, 0x600);
-
-    // asm volatile ("cli\nhlt" :: "a"(0x2454));
+    FSWriteFile("home/helloworld.bf", Buf, 0x800);
 
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) asm volatile ("cli\nhlt" :: "a"(0x2454));
     

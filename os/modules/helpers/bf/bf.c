@@ -170,7 +170,11 @@ size_t BFTellNextCom(bf_tokenizer* Tokenizer)
     for (size_t I = Tokenizer->At; I < Tokenizer->Size; I++)
     {
         if (Tokenizer->Code[I] == '(') Counter++;
-        if (Tokenizer->Code[I] == ')') Counter--;
+        if (Tokenizer->Code[I] == ')') 
+        {
+            Counter--;
+            if (Counter == -1) return 0xFFFFFFFF;
+        }
         if (Tokenizer->Code[I] == ',')
         {
             if (Counter == 0) return I;
@@ -655,13 +659,6 @@ bf_token* BFTokenizeFor(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 
 bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 {
-    WMPrintStr("Tokenizing expr");
-    for (int i = 0;i < 10;i++)
-    {
-        WMPrintChar(Tokenizer->Code[i + Tokenizer->At]);
-    }
-    WMPrintChar('\n');
-
     bf_token* Tok = (bf_token*)malloc(sizeof(bf_token));
     memset(Tok, 0, sizeof(bf_token));
 
@@ -678,7 +675,6 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
             if (NextMatching == 0xFFFFFFFF)
             {
                 free(Tok);
-                WMPrintStr("Finished with error");
                 return NULL;
             }
             Tokenizer->At++;
@@ -688,14 +684,11 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
             if (Tokenizer->Code[Tokenizer->At] == ';' || Tokenizer->Code[Tokenizer->At] == ')')
             {
                 free(Tok);
-                WMPrintStr("Finished");
                 return NextToken;
             }
             Tok->First = NextToken;
             Tok->Type = BFTokenizeOpType(Tokenizer);
             Tok->Second = BFTokenizeExpr(Tokenizer, CurrentScope);
-
-                WMPrintStr("Finished");
             return Tok;
         }
     }
@@ -722,139 +715,123 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
         if (StrEqualsWith(CheckStr, StrFromCStr("if")))
         {
             free(CheckStr.data);
-                WMPrintStr("Finished");
             return BFTokenizeIf(Tokenizer, CurrentScope);
         }
         else if (StrEqualsWith(CheckStr, StrFromCStr("while")))
         {
             free(CheckStr.data);
-                WMPrintStr("Finished");
             return BFTokenizeWhile(Tokenizer, CurrentScope);
         }
         else if (StrEqualsWith(CheckStr, StrFromCStr("for")))
         {
             free(CheckStr.data);
-                WMPrintStr("Finished");
             return BFTokenizeFor(Tokenizer, CurrentScope);
         }
         else if (StrEqualsWith(CheckStr, StrFromCStr("print")))
         {
             free(CheckStr.data);
-                WMPrintStr("Finished");
             return BFTokenizePrint(Tokenizer, CurrentScope);
         }
         else if (StrEqualsWith(CheckStr, StrFromCStr("cast")))
         {
             free(CheckStr.data);
-                WMPrintStr("Finished");
             return BFTokenizeCast(Tokenizer, CurrentScope);
         }
         else if (StrEqualsWith(CheckStr, StrFromCStr("return")))
         {
             free(CheckStr.data);
-                WMPrintStr("Finished");
             return BFTokenizeReturn(Tokenizer, CurrentScope);
         }
         free(CheckStr.data);
     }
     if (NextSqrBr < NextBr && NextRSqrBr != 0xFFFFFFFF)
     {
-
-        bf_token* MyTok = BFTokenizeFuncCall(Tokenizer, CurrentScope);
-
-        if (NextRSqrBr == NextCom - 1 || NextRSqrBr == NextSemi - 1) 
-        {
-                WMPrintStr("Finished");
-            return MyTok;
-        }
-        
-        bf_token* SurroundToken = (bf_token*)malloc(sizeof(bf_token));
-        memset(SurroundToken, 0, sizeof(bf_token));
+        free(Tok);
+        Tok = BFTokenizeFuncCall(Tokenizer, CurrentScope);
         Tokenizer->At = NextRSqrBr + 1;
-        SurroundToken->First = MyTok;
-        SurroundToken->Type = BFTokenizeOpType(Tokenizer);
-        SurroundToken->Second = BFTokenizeExpr(Tokenizer, CurrentScope);
-                WMPrintStr("Finished");
-        return SurroundToken;
-    }
-
-    if ('0' <= Tokenizer->Code[Tokenizer->At] && Tokenizer->Code[Tokenizer->At] <= '9')
-    {
-        int Multiplier = 1;
-        int Val = 0;
-        for (int I = NextBr - 1;I >= Tokenizer->At;I--)
-        {
-            int C = Tokenizer->Code[I];
-            if (C < '0' || C > '9') 
-            {
-                WMPrintStr("Finished with error");
-                return 0;
-            }
-            Val += Multiplier * (C - '0');
-            Multiplier *= 10;
-        }
-        Tok->IsConstant = true;
-        Tok->Const.type.IsFloat = false;
-        Tok->Const.type.IsStruct = false;
-        Tok->Const.type.Bits = 32;
-        Tok->Const.intVal = Val;
     }
     else
     {
-        bf_variable* OutPtr;
-        bf_name VarName;
-        VarName.Name = Tokenizer->Code + Tokenizer->At;
-        VarName.Len = NextBr - Tokenizer->At;
-        size_t OldVarLen = VarName.Len;
-
-        for (int I = 0;I < VarName.Len;I++)
+        if (('0' <= Tokenizer->Code[Tokenizer->At] && Tokenizer->Code[Tokenizer->At] <= '9') || Tokenizer->Code[Tokenizer->At] == '~')
         {
-            if (VarName.Name[I] == '.')
+            int Multiplier = 1;
+            if (Tokenizer->Code[Tokenizer->At] == '~') 
             {
-                VarName.Len = I;
-                break;
+                Multiplier *= -1;
+                Tokenizer->At++;
             }
-        }
-
-        if (BFFindVariable(VarName, CurrentScope, &OutPtr))
-        {
-            Tok->IsVar = true;
-            Tok->Var = OutPtr;
-            size_t OldTokAt = Tokenizer->At;
-            bf_token* IfMemberAccess = BFTokenizeMemberAccess(Tokenizer, OutPtr, OutPtr->Type, Tokenizer->At + OldVarLen);
-            Tokenizer->At = OldTokAt;
-            if (IfMemberAccess != 0)
+            int Val = 0;
+            for (int I = NextBr - 1;I >= Tokenizer->At;I--)
             {
-                Tok->Type = BFMEMBERACCESS;
-                Tok->First = IfMemberAccess;
-                Tok->IsFinalMember = false;
+                int C = Tokenizer->Code[I];
+                if (C < '0' || C > '9') 
+                {
+                    return 0;
+                }
+                Val += Multiplier * (C - '0');
+                Multiplier *= 10;
             }
+            Tok->IsConstant = true;
+            Tok->Const.type = *(bf_type*)LinkedListGet(&Tokenizer->Types, 0);
+            Tok->Const.intVal = Val;
+            Tok->Const.isReturn = false;
         }
         else
         {
-            
+            bf_variable* OutPtr;
+            bf_name VarName;
+            VarName.Name = Tokenizer->Code + Tokenizer->At;
+            VarName.Len = NextBr - Tokenizer->At;
+            size_t OldVarLen = VarName.Len;
 
-            bf_variable* NewVar = (bf_variable*)malloc(sizeof(bf_variable));
-            NewVar->Name = VarName;
-            
-            NewVar->Val = (bf_constant){ 0 };
-            if (IsTyped) NewVar->Type = IsTyped_Type;
-            else NewVar->Type = *(bf_type*)LinkedListGet(&Tokenizer->Types, 0);
-            
-            CurrentScope->Vars[CurrentScope->VarsCount++] = NewVar;
-            bf_variable** NewVars = (bf_variable**)malloc(sizeof(bf_variable*) * (CurrentScope->VarsCount + 1));
-            memcpy(NewVars, CurrentScope->Vars, sizeof(bf_variable*) * CurrentScope->VarsCount);
-            free(CurrentScope->Vars);
-            CurrentScope->Vars = NewVars;
+            for (int I = 0;I < VarName.Len;I++)
+            {
+                if (VarName.Name[I] == '.')
+                {
+                    VarName.Len = I;
+                    break;
+                }
+            }
 
-            Tok->IsVar = true;
-            Tok->Var = NewVar;
+            if (BFFindVariable(VarName, CurrentScope, &OutPtr))
+            {
+                Tok->IsVar = true;
+                Tok->Var = OutPtr;
+                size_t OldTokAt = Tokenizer->At;
+                bf_token* IfMemberAccess = BFTokenizeMemberAccess(Tokenizer, OutPtr, OutPtr->Type, Tokenizer->At + OldVarLen);
+                Tokenizer->At = OldTokAt;
+                if (IfMemberAccess != 0)
+                {
+                    Tok->Type = BFMEMBERACCESS;
+                    Tok->First = IfMemberAccess;
+                    Tok->IsFinalMember = false;
+                }
+            }
+            else
+            {
+                
+
+                bf_variable* NewVar = (bf_variable*)malloc(sizeof(bf_variable));
+                NewVar->Name = VarName;
+                
+                NewVar->Val = (bf_constant){ 0 };
+                if (IsTyped) NewVar->Type = IsTyped_Type;
+                else NewVar->Type = *(bf_type*)LinkedListGet(&Tokenizer->Types, 0);
+                
+                CurrentScope->Vars[CurrentScope->VarsCount++] = NewVar;
+                bf_variable** NewVars = (bf_variable**)malloc(sizeof(bf_variable*) * (CurrentScope->VarsCount + 1));
+                memcpy(NewVars, CurrentScope->Vars, sizeof(bf_variable*) * CurrentScope->VarsCount);
+                free(CurrentScope->Vars);
+                CurrentScope->Vars = NewVars;
+
+                Tok->IsVar = true;
+                Tok->Var = NewVar;
+            }
         }
     }
     
     if (NextBr < NextOp || NextOp == 0xFFFFFFFF)
     {
-                WMPrintStr("Finished");
         return Tok;
     }
 
@@ -868,7 +845,6 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
     
     
     SurroundTok->Second = BFTokenizeExpr(Tokenizer, CurrentScope);
-                WMPrintStr("Finished");
     return SurroundTok;
 }
 
@@ -1009,16 +985,13 @@ void BFTokenizeFunction(bf_tokenizer* Tokenizer)
 
     while (Tokenizer->At < NextMatchingBr)
     {
-        WMPrintStr("Tokenizing line");
         size_t NextSemi = BFTellNextSemi(Tokenizer);
         if (NextSemi == 0xFFFFFFFF) return;
         bf_token* Line = BFTokenizeLine(Tokenizer, &CurrentFunction->RootScope);
         LinkedListPushBack(&CurrentFunction->RootScope.Lines, &Line);
 
         Tokenizer->At = NextSemi + 1;
-        WMPrintStr("Line tokenized");
     }
-        WMPrintStr("Tokenized function lines");
     Tokenizer->At = NextMatchingBr + 1;
     Tokenizer->Functions[Tokenizer->BFNumFunctions++] = CurrentFunction;
     bf_function** NewFuncs = (bf_function**)malloc(sizeof(bf_function*) * (Tokenizer->BFNumFunctions + 1));
@@ -1026,7 +999,6 @@ void BFTokenizeFunction(bf_tokenizer* Tokenizer)
     memcpy(NewFuncs, Tokenizer->Functions, sizeof(bf_function*) * Tokenizer->BFNumFunctions);
     free(Tokenizer->Functions);
     Tokenizer->Functions = NewFuncs;
-        WMPrintStr("Tokenized function");
 }
 
 // Here we go!
@@ -1064,7 +1036,6 @@ bf_function** BFTokenize(uint8_t* Code, size_t Len)
     {
         BFTokenizeFunction(&Tokenizer);
     }
-    WMPrintStr("Tokenized");
     
     return Tokenizer.Functions;
 }
@@ -1074,10 +1045,14 @@ bf_constant BFExecuteFunc(bf_function* Func);
 bool BFTypeEquals(bf_type x, bf_type y)
 {
     if (x.IsStruct != y.IsStruct) return false;
+    if (x.IsStruct) 
+    {
+        if (!StrEqualsWith(x.Name, y.Name)) return false;
+        return true;
+    }
     if (x.IsFloat != y.IsFloat) return false;
     if (x.IsFloat) return true;
     if (x.Bits != y.Bits) return false;
-    if (!StrEqualsWith(x.Name, y.Name)) return false;
     return true;
 }
 
@@ -1085,7 +1060,7 @@ bf_constant BFAddVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: ADD Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct)
@@ -1104,7 +1079,7 @@ bf_constant BFSubVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: SUB Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct)
@@ -1123,7 +1098,7 @@ bf_constant BFMulVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: MUL Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct)
@@ -1143,7 +1118,7 @@ bf_constant BFDivVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: DIV Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct)
@@ -1152,10 +1127,10 @@ bf_constant BFDivVal(bf_constant x, bf_constant y)
         return (bf_constant){ 0 };
     }
 
-    if (y.floatVal != 0.0f) x.floatVal /= y.floatVal;
-    x.byteVal /= y.byteVal;
-    x.intVal /= y.intVal;
-    x.shortVal /= y.shortVal;
+    x.floatVal /= y.floatVal;
+    if (y.byteVal != 0) x.byteVal /= y.byteVal;
+    if (y.intVal != 0) x.intVal /= y.intVal;
+    if (y.shortVal != 0) x.shortVal /= y.shortVal;
     return x;
 }
 
@@ -1163,7 +1138,7 @@ bf_constant BFModVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: MOD Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct)
@@ -1172,9 +1147,9 @@ bf_constant BFModVal(bf_constant x, bf_constant y)
         return (bf_constant){ 0 };
     }
 
-    x.byteVal %= y.byteVal;
-    x.intVal %= y.intVal;
-    x.shortVal %= y.shortVal;
+    if (y.byteVal != 0) x.byteVal %= y.byteVal;
+    if (y.intVal != 0) x.intVal %= y.intVal;
+    if (y.shortVal != 0) x.shortVal %= y.shortVal;
     return x;
 }
 
@@ -1182,7 +1157,7 @@ bf_constant BFShlVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: SHL Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct || x.type.IsFloat)
@@ -1201,7 +1176,7 @@ bf_constant BFShrVal(bf_constant x, bf_constant y)
 {
     if (!BFTypeEquals(x.type, y.type)) 
     {
-        WMPrintStr("bf: Type mismatch");
+        WMPrintStr("bf: SHR Type mismatch");
         return (bf_constant){ 0 };
     }
     if (x.type.IsStruct || x.type.IsFloat)
@@ -1341,10 +1316,19 @@ bf_constant BFCastVal(bf_constant x, bf_type castTo)
 
 bf_constant BFExecuteToken(bf_token* Tok)
 {
-    if (Tok->IsConstant) return Tok->Const;
+    if (Tok->IsConstant) 
+    {
+        return Tok->Const;
+    }
     if (Tok->IsVar)
     {
         return Tok->Var->Val;
+    }
+    if (Tok->Type == BFRETURN)
+    {
+        bf_constant Val = BFExecuteToken(Tok->First);
+        Val.isReturn = true;
+        return Val;
     }
     if (Tok->Type == BFCAST)
     {
@@ -1426,7 +1410,11 @@ bf_constant BFExecuteToken(bf_token* Tok)
         {
             for (int I = 0;I < Tok->NextScope->Lines.size;I++)
             {
-                BFExecuteToken(*(bf_token**)LinkedListGet(&Tok->NextScope->Lines, I));
+                bf_constant Val = BFExecuteToken(*(bf_token**)LinkedListGet(&Tok->NextScope->Lines, I));
+                if (Val.isReturn)
+                {
+                    return Val;
+                }
             }
         }
 
@@ -1446,7 +1434,11 @@ bf_constant BFExecuteToken(bf_token* Tok)
 
             for (int I = 0;I < Tok->NextScope->Lines.size;I++)
             {
-                BFExecuteToken(*(bf_token**)LinkedListGet(&Tok->NextScope->Lines, I));
+                bf_constant Val = BFExecuteToken(*(bf_token**)LinkedListGet(&Tok->NextScope->Lines, I));
+                if (Val.isReturn)
+                {
+                    return Val;
+                }
             }
         }
 
@@ -1466,7 +1458,11 @@ bf_constant BFExecuteToken(bf_token* Tok)
             
             for (int I = 0;I < Tok->NextScope->Lines.size;I++)
             {
-                BFExecuteToken(*(bf_token**)LinkedListGet(&Tok->NextScope->Lines, I));
+                bf_constant Val = BFExecuteToken(*(bf_token**)LinkedListGet(&Tok->NextScope->Lines, I));
+                if (Val.isReturn)
+                {
+                    return Val;
+                }
             }
 
 
@@ -1481,18 +1477,27 @@ bf_constant BFExecuteToken(bf_token* Tok)
         {
             Tok->CallFunction->RootScope.Vars[I]->Val = BFExecuteToken(Tok->Params[I]);
         }
-        return BFExecuteFunc(Tok->CallFunction);
+        bf_constant result = BFExecuteFunc(Tok->CallFunction);
+        return result;
     }
+    bf_constant Failed;
+    Failed.isReturn = false;
+    Failed.type.IsFloat = false;
+    Failed.type.IsStruct = false;
+    Failed.type.Bits = 8;
+    Failed.intVal = 0;
+    return Failed;
 }
 
 bf_constant BFExecuteFunc(bf_function* Func)
 {
-    for (int I = 0; I < Func->RootScope.Lines.size; I++)
+    for (int I = 0;; I++)
     {
         bf_constant R = BFExecuteToken(*(bf_token**)LinkedListGet(&Func->RootScope.Lines, I));
 
-        if (I == Func->RootScope.Lines.size - 1)
+        if (I == Func->RootScope.Lines.size - 1 || R.isReturn)
         {
+            R.isReturn = false;
             return R;
         }
     }

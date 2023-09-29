@@ -62,6 +62,7 @@ typedef struct _bf_type_name {
 } bf_type_name;
 
 typedef struct {
+    bool isReturn;
     bf_type type;
     float floatVal;
     char byteVal;

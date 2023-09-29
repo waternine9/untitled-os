@@ -5,12 +5,12 @@
 section .boot
 
 global bootentry
-bootentry: jmp entry0
+bootentry: jmp 0:entry0
 
 db "UNTITLED_OS"
 
 entry0:
-    jmp 0:entry
+    jmp entry
 ; Entry point:
 entry:
 
