@@ -16,6 +16,32 @@ kstart:
     mov eax, 0x7E00
     mov esp, eax
 
+    ; Find RSDP
+    mov ecx, 0x20000
+    mov esi, 0xE0000
+    RSDPfind:
+    mov eax, [esi]
+    cmp eax, "RSD "
+    jne .NotFound
+    mov eax, [esi + 4]
+    cmp eax, "PTR "
+    je .Found
+    .NotFound:
+    inc esi
+    loop RSDPfind
+    mov eax, 0xEEEEEE
+    cli
+    hlt
+    .Found:
+    mov edi, 0x7ED0
+    mov ecx, 0x30
+    .Copy:
+    mov eax, [esi]
+    mov [edi], eax
+    inc esi
+    inc edi
+    loop .Copy
+
     cld
 
 ; Reprogram the PIT to be 1.193182 / 16 MHz
@@ -114,13 +140,6 @@ ReadLoop:
     push rax
     push 0x20 | 3
     push rcx
-    mov al, 0
-    mov dx, 0x21
-    out dx, al
-    in al, 0x80
-    mov al, 0
-    mov dx, 0xA1
-    out dx, al
 	iretq
 CurrentLBA: dd 4 + (0x2000 / 512)
 CurrentLBAOs: dd 4 + (0x40000 / 512)

@@ -73,7 +73,7 @@ void WMPrintStr(char* Str)
 }
 
 void WMPrintChar(char Char)
-{ 
+{
     LogChar(Char, LOG_INFO);
 }
 

@@ -183,6 +183,21 @@ size_t BFTellNextCom(bf_tokenizer* Tokenizer)
     return 0xFFFFFFFF;
 }
 
+size_t BFTellNextArrEnd(bf_tokenizer* Tokenizer)
+{
+    int Counter = 0;
+    for (size_t I = Tokenizer->At; I < Tokenizer->Size; I++)
+    {
+        if (Tokenizer->Code[I] == '[') Counter++;
+        if (Tokenizer->Code[I] == ']') 
+        {
+            Counter--;
+            if (Counter == 0) return I;
+        }
+    }
+    return 0xFFFFFFFF;
+}
+
 bool BFFindVariable(bf_name SearchFor, bf_scope* SearchIn, bf_variable** OutPtr)
 {
 
@@ -262,13 +277,19 @@ bf_token* BFTokenizeFuncCall(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 
 }
 
-bool BFTokenizeType(bf_tokenizer *Tokenizer, bf_type* OutType)
+bool BFTokenizeType(bf_tokenizer *Tokenizer, bf_scope* Scope, bf_type* OutType)
 {
     String S = NewStr();
     size_t OldTokAt = Tokenizer->At;
     bool IsFound = false;
+    int ArrPos = -1;
     while (Tokenizer->At < Tokenizer->Size)
     {
+        if (Tokenizer->Code[Tokenizer->At] == '[')
+        {
+            ArrPos = Tokenizer->At;
+            IsFound = true;
+        }
         if (Tokenizer->Code[Tokenizer->At] == ':')
         {
             Tokenizer->At++;
@@ -281,16 +302,33 @@ bool BFTokenizeType(bf_tokenizer *Tokenizer, bf_type* OutType)
             IsFound = false;
             break;
         }
-        StrPushBack(&S, Tokenizer->Code[Tokenizer->At]);
+        if (!IsFound) StrPushBack(&S, Tokenizer->Code[Tokenizer->At]);
         Tokenizer->At++;
     }
     if (IsFound)
-    {
+    {  
         for (int I = 0;I < Tokenizer->Types.size;I++)
         {
             if (StrEqualsWith(((bf_type*)LinkedListGet(&Tokenizer->Types, I))->Name, S))
             {
+                if (OutType) WMPrintStr("Tokenizing array");
                 *OutType = *(bf_type*)LinkedListGet(&Tokenizer->Types, I);
+
+                OutType->ArrData = 0;
+                OutType->ArrSize = 0;
+
+                if (Scope)
+                {
+                    size_t OldAt = Tokenizer->At;
+                    if (ArrPos != -1)
+                    {
+                        Tokenizer->At = ArrPos + 1;
+                        OutType->ArrSize = BFTokenizeExpr(Tokenizer, Scope);
+                    }
+                    Tokenizer->At = OldAt;
+                    WMPrintStr("Success!");
+                }
+
                 return true;
             }
         }
@@ -421,7 +459,7 @@ bf_token* BFTokenizeCast(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
     memset(Token, 0, sizeof(bf_token));
     Token->Type = BFCAST;
     bf_type OutType;
-    if (BFTokenizeType(Tokenizer, &OutType))
+    if (BFTokenizeType(Tokenizer, CurrentScope, &OutType))
     {
         Token->CastTo = OutType;
     }
@@ -659,11 +697,19 @@ bf_token* BFTokenizeFor(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 
 bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 {
+    char s[10];
+    for (int i = Tokenizer->At;i < Tokenizer->At + 9;i++)
+    {
+        s[i - Tokenizer->At] = Tokenizer->Code[i];
+    }
+    s[9] = 0;
+    WMPrintStr(s);
+
     bf_token* Tok = (bf_token*)malloc(sizeof(bf_token));
     memset(Tok, 0, sizeof(bf_token));
 
     bf_type IsTyped_Type;
-    bool IsTyped = BFTokenizeType(Tokenizer, &IsTyped_Type);
+    bool IsTyped = BFTokenizeType(Tokenizer, CurrentScope, &IsTyped_Type);
 
     if (!IsTyped)
     {
@@ -696,11 +742,13 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
     size_t NextSemi = BFTellNext(Tokenizer, ';');
     size_t NextBr = BFTellNext(Tokenizer, ')');
     size_t NextRSqrBr = BFTellNext(Tokenizer, ')');
+    size_t NextArrEnd = BFTellNextArrEnd(Tokenizer);
     size_t NextCom = BFTellNext(Tokenizer, ',');
     if (NextOp < NextBr) NextBr = NextOp;
     if (NextSemi < NextBr) NextBr = NextSemi;
     if (NextRSqrBr < NextBr) NextBr = NextRSqrBr;
     if (NextCom < NextBr) NextBr = NextCom;
+    if (NextArrEnd < NextBr) NextBr = NextArrEnd;
 
     size_t NextSqrBr = BFTellNext(Tokenizer, '(');
     
@@ -783,9 +831,18 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
             VarName.Name = Tokenizer->Code + Tokenizer->At;
             VarName.Len = NextBr - Tokenizer->At;
             size_t OldVarLen = VarName.Len;
+            
+            size_t IdxPos = 0;
 
             for (int I = 0;I < VarName.Len;I++)
             {
+                if (VarName.Name[I] == '[')
+                {
+                    IdxPos = I + Tokenizer->At;
+                    VarName.Len = I;
+                    break;
+                }
+
                 if (VarName.Name[I] == '.')
                 {
                     VarName.Len = I;
@@ -799,13 +856,13 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
                 Tok->Var = OutPtr;
                 size_t OldTokAt = Tokenizer->At;
                 bf_token* IfMemberAccess = BFTokenizeMemberAccess(Tokenizer, OutPtr, OutPtr->Type, Tokenizer->At + OldVarLen);
-                Tokenizer->At = OldTokAt;
                 if (IfMemberAccess != 0)
                 {
                     Tok->Type = BFMEMBERACCESS;
                     Tok->First = IfMemberAccess;
                     Tok->IsFinalMember = false;
                 }
+                Tokenizer->At = OldTokAt;
             }
             else
             {
@@ -826,6 +883,14 @@ bf_token* BFTokenizeExpr(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 
                 Tok->IsVar = true;
                 Tok->Var = NewVar;
+            }
+
+            if (Tok->Var->Type.ArrSize && IdxPos > 0)
+            {
+                size_t OldTokAt = Tokenizer->At;
+                Tokenizer->At = IdxPos + 1;
+                Tok->First = BFTokenizeExpr(Tokenizer, CurrentScope);
+                Tokenizer->At = OldTokAt;
             }
         }
     }
@@ -854,11 +919,11 @@ bf_token* BFTokenizeLine(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
     return BFTokenizeExpr(Tokenizer, CurrentScope);
 }
 
-bf_member BFTokenizeStructMember(bf_tokenizer* Tokenizer)
+bf_member BFTokenizeStructMember(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 {
     bf_member CurMember;
     bf_type IsTyped_Type;
-    bool IsTyped = BFTokenizeType(Tokenizer, &IsTyped_Type);
+    bool IsTyped = BFTokenizeType(Tokenizer, CurrentScope, &IsTyped_Type);
     if (!IsTyped) return CurMember;
     size_t NextSemi = BFTellNext(Tokenizer, ';');
     String CurMemberName = StrFromArray((char*)Tokenizer->Code + Tokenizer->At, NextSemi - Tokenizer->At); 
@@ -868,7 +933,7 @@ bf_member BFTokenizeStructMember(bf_tokenizer* Tokenizer)
     return CurMember;
 }
 
-void BFTokenizeStruct(bf_tokenizer* Tokenizer)
+void BFTokenizeStruct(bf_tokenizer* Tokenizer, bf_scope* CurrentScope)
 {
     size_t EndBr = BFTellNext(Tokenizer, '}');
     if (EndBr == 0xFFFFFFFF) return;
@@ -880,7 +945,7 @@ void BFTokenizeStruct(bf_tokenizer* Tokenizer)
     Tokenizer->At = BeginBr + 1;
     while (Tokenizer->At < EndBr)
     {
-        bf_member member = BFTokenizeStructMember(Tokenizer);
+        bf_member member = BFTokenizeStructMember(Tokenizer, CurrentScope);
         LinkedListPushBack(&CurType.StructMembers, &member);
     }
     Tokenizer->At = EndBr + 1;
@@ -894,11 +959,11 @@ void BFTokenizeFunction(bf_tokenizer* Tokenizer)
     size_t NextCurBr = BFTellNext(Tokenizer, '{');
     if (NextCurBr < NextSqrBr)
     {
-        BFTokenizeStruct(Tokenizer);
+        BFTokenizeStruct(Tokenizer, 0);
         return;
     }
     bf_type OutReturnType;
-    bool isReturnTyped = BFTokenizeType(Tokenizer, &OutReturnType);
+    bool isReturnTyped = BFTokenizeType(Tokenizer, 0, &OutReturnType);
     
     if (NextSqrBr == 0xFFFFFFFF) return;
     
@@ -944,7 +1009,7 @@ void BFTokenizeFunction(bf_tokenizer* Tokenizer)
             }
             
             bf_type OutType;
-            bool IsTyped = BFTokenizeType(Tokenizer, &OutType);
+            bool IsTyped = BFTokenizeType(Tokenizer, 0, &OutType);
             Var->Name.Name = Tokenizer->Code + Tokenizer->At;
             Var->Name.Len = NextCom - Tokenizer->At;
             Var->Val = (bf_constant){ 0 };
@@ -1322,6 +1387,62 @@ bf_constant BFExecuteToken(bf_token* Tok)
     }
     if (Tok->IsVar)
     {
+        if (Tok->Var->Val.type.ArrSize)
+        {
+            size_t ElemSize = 1;
+            if (Tok->Var->Val.type.IsFloat) ElemSize = 4;
+            else if (Tok->Var->Val.type.Bits == BFBITS32) ElemSize = 4;
+            else if (Tok->Var->Val.type.Bits == BFBITS16) ElemSize = 2;
+            
+            if (!Tok->Var->Val.type.ArrData)
+            {
+                bf_constant ArrSize = BFExecuteToken(Tok->Var->Val.type.ArrSize);
+
+                if (ArrSize.type.IsFloat || ArrSize.type.IsStruct)
+                {
+                    WMPrintStr("bf: Cant size arrays with floats/structs");
+                    return (bf_constant){ 0 };
+                }
+
+                if (ArrSize.type.Bits == BFBITS32) Tok->Var->Val.type.ArrData = malloc(ElemSize * ArrSize.intVal);
+                else if (ArrSize.type.Bits == BFBITS16) Tok->Var->Val.type.ArrData = malloc(ElemSize * ArrSize.shortVal);
+                else if (ArrSize.type.Bits == BFBITS8) Tok->Var->Val.type.ArrData = malloc(ElemSize * ArrSize.byteVal);
+            }
+            
+            bf_constant ArrIdx = BFExecuteToken(Tok->First);
+
+            if (ArrIdx.type.IsFloat || ArrIdx.type.IsStruct)
+            {
+                WMPrintStr("bf: Cant index arrays with floats/structs");
+                return (bf_constant){ 0 };
+            }
+
+            int Idx = 0;
+            if (ArrIdx.type.Bits == BFBITS32) Idx = ArrIdx.intVal;
+            else if (ArrIdx.type.Bits == BFBITS16) Idx = ArrIdx.shortVal;
+            else if (ArrIdx.type.Bits == BFBITS8) Idx = ArrIdx.byteVal;
+            
+            if (Tok->Var->Val.type.IsFloat) 
+            {
+                Tok->Var->Val.floatVal = *(float*)((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 4);
+                Tok->Var->Val.assignDest = ((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 4);
+            }
+            else if (Tok->Var->Val.type.Bits == BFBITS32)
+            {
+                Tok->Var->Val.intVal = *(int*)((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 4);
+                Tok->Var->Val.assignDest = ((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 4);
+            }
+            else if (Tok->Var->Val.type.Bits == BFBITS16)
+            {
+                Tok->Var->Val.shortVal = *(int16_t*)((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 2);
+                Tok->Var->Val.assignDest = ((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 2);
+            }
+            else if (Tok->Var->Val.type.Bits == BFBITS8)
+            {
+                Tok->Var->Val.byteVal = *(char*)((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 1);
+                Tok->Var->Val.assignDest = ((uint8_t*)Tok->Var->Val.type.ArrData + Idx * 1);
+            }
+        }
         return Tok->Var->Val;
     }
     if (Tok->Type == BFRETURN)
@@ -1337,8 +1458,29 @@ bf_constant BFExecuteToken(bf_token* Tok)
     if (Tok->Type == BFASSIGN)
     {
         if (Tok->First->Var) 
-        {
-            Tok->First->Var->Val = BFExecuteToken(Tok->Second);
+        { 
+            bf_constant Val1 = BFExecuteToken(Tok->First);
+            bf_constant Val2 = BFExecuteToken(Tok->Second);
+            if (!BFTypeEquals(Tok->First->Var->Type, Val2.type))
+            {
+                WMPrintStr("bf: Assign type mismatch");
+            }
+            if (Val1.type.IsFloat) 
+            {
+                *(float*)Val1.assignDest = Val2.floatVal;
+            }
+            else if (Val1.type.Bits == BFBITS32)
+            {
+                *(int*)Val1.assignDest = Val2.intVal;
+            }
+            else if (Val1.type.Bits == BFBITS16)
+            {
+                *(int16_t*)Val1.assignDest = Val2.shortVal;
+            }
+            else if (Val1.type.Bits == BFBITS8)
+            {
+                *(char*)Val1.assignDest = Val2.byteVal;
+            }
         }
 
         return Tok->First->Var->Val;

@@ -32,6 +32,7 @@ global HandlerIRQ13
 global HandlerIRQ14 
 global HandlerIRQ15
 global HandlerIVT70
+global HandlerSpurious
 
 extern CHandlerIRQ0
 extern CHandlerIRQ1
@@ -160,6 +161,7 @@ PageFaultS:
     mov word [0xFFFFFFFF90000002], 0x0F00 | 'A'
     mov word [0xFFFFFFFF90000004], 0x0F00 | 'G'
     mov word [0xFFFFFFFF90000006], 0x0F00 | 'E'
+    mov eax, 0x57575757
     cli
     hlt
     call PageFault
@@ -170,6 +172,7 @@ GeneralProtectionFaultS:
     PUSHA64
     mov word [0xFFFFFFFF90000000], 0x0F00 | 'G'
     mov word [0xFFFFFFFF90000002], 0x0F00 | 'P'
+    mov eax, 0x47474747
     cli
     hlt
     call GeneralProtectionFault
@@ -182,6 +185,7 @@ UnknownFaultS:
     PUSHA64
     mov word [0xFFFFFFFF90000000], 0x0F00 | 'U'
     mov word [0xFFFFFFFF90000002], 0x0F00 | 'K'
+    mov eax, 0x1234567
     cli
     hlt
     call UnknownFault
@@ -196,9 +200,66 @@ TSSFaultS:
     iretq
 
 SyscallS:
+
+    push rax
+    mov ax, 0x10
+    mov es, ax
+    mov ds, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    pop rax
+    
+    mov [.tss], rax
+    mov [.tss + 8], rbx
+    mov [.tss + 16], rcx
+    mov [.tss + 24], rdx
+    mov [.tss + 32], rdi
+    mov [.tss + 40], rsi
+    mov rax, [rsp + 24]
+    mov [.tss + 48], rax
+    mov rax, [rsp + 16]
+    mov [.tss + 56], rax
+    mov rax, [rsp]
+    mov [.tss + 64], rax
+    mov rax, [rsp + 32]
+    cmp rax, 0
+    jg .done_seg
+    mov rax, 0x10
+.done_seg:
+    mov [.tss + 136 + 16 * 16 + 8], rax
+    mov rax, [rsp + 8]
+    mov [.tss + 136 + 16 * 16 + 0], rax
+    mov [.tss + 72], rbp
+    mov [.tss + 80], r9
+    mov [.tss + 88], r10
+    mov [.tss + 96], r11
+    mov [.tss + 104], r12
+    mov [.tss + 112], r13
+    mov [.tss + 120], r14
+    mov [.tss + 128], r15
+    movdqu [.tss + 136], xmm0
+    movdqu [.tss + 136 + 16 * 1], xmm1
+    movdqu [.tss + 136 + 16 * 2], xmm2
+    movdqu [.tss + 136 + 16 * 3], xmm3
+    movdqu [.tss + 136 + 16 * 4], xmm4
+    movdqu [.tss + 136 + 16 * 5], xmm5
+    movdqu [.tss + 136 + 16 * 6], xmm6
+    movdqu [.tss + 136 + 16 * 7], xmm7
+    movdqu [.tss + 136 + 16 * 8], xmm8
+    movdqu [.tss + 136 + 16 * 9], xmm9
+    movdqu [.tss + 136 + 16 * 10], xmm10
+    movdqu [.tss + 136 + 16 * 11], xmm11
+    movdqu [.tss + 136 + 16 * 12], xmm12
+    movdqu [.tss + 136 + 16 * 13], xmm13
+    movdqu [.tss + 136 + 16 * 14], xmm14
+    movdqu [.tss + 136 + 16 * 15], xmm15
+
     PUSHA64
     mov rdi, rbx
     mov rdx, rcx
+    mov rcx, .tss
+    
     call Syscall
     cmp rax, 0
     je .dont_switch
@@ -211,6 +272,8 @@ SyscallS:
     POPA64
 .done:
     iretq
+.tss:
+    times 0x400 / 8 dq 0
 
 ; rdx is the OSes stack pointer
 ; rcx is the OSes entrypoint
@@ -392,6 +455,9 @@ HandlerIVT70:
     PUSHA64
     call CHandlerIVT70
     POPA64
+    iretq
+
+HandlerSpurious:
     iretq
 
 LoadIDT:

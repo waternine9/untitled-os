@@ -7,6 +7,7 @@
 #include "font.h"
 #include "keyboard.h"
 #include "drivers/fs/fs.h"
+#include "apic.h"
 
 #define PRESENT_BIT 47
 #define DPL_BIT 45
@@ -36,7 +37,6 @@ static IDTEntry* IDTEntries;
 
 /* Interrupt Handlers */
 
-extern void LoadIDT();
 extern void PageFaultS();
 extern void GeneralProtectionFaultS();
 extern void UnknownFaultS();
@@ -61,6 +61,7 @@ extern void HandlerIRQ13();
 extern void HandlerIRQ14();
 extern void HandlerIRQ15();
 extern void HandlerIVT70();
+extern void HandlerSpurious();
 
 void PageFault(void)
 {
@@ -74,14 +75,14 @@ void GeneralProtectionFault(void)
 
 void UnknownFault(void)
 {
-
+    asm volatile ("cli\nhlt" :: "a"(0x4232));
 }
 
-uint8_t Int70Fired = 0;
-
+int Int70Fired;
 void CHandlerIVT70(void)
 {
     Int70Fired = 1;
+    ApicEOI();
 }
 
 uint32_t TransformCol(uint32_t Col)
@@ -103,13 +104,6 @@ void AddProcess(uint64_t ip, uint64_t size)
 {
     if (SchedRing[SchedRingIdx].Privilege == 1)
     {
-        uint8_t* Allocated = (uint8_t*)AllocVM(size & 0xFFFFFFFF);
-        
-        for (int i = 0;i < (size & 0xFFFFFFFF);i++)
-        {
-            Allocated[i] = *(uint8_t*)(ip + i);
-        }
-
         if ((SchedRingSize % 16) == 15) 
         {
             SoftTSS* NewRing = (SoftTSS*)AllocVM(sizeof(SoftTSS) * (SchedRingSize / 16 * 16 + 16));
@@ -126,9 +120,10 @@ void AddProcess(uint64_t ip, uint64_t size)
         SchedRing[SchedRingSize].ds = 0x28 | 3;
         SchedRing[SchedRingSize].rip = ip;
         SchedRing[SchedRingSize].rsp = AllocVM(0x40000) + 0x40000;
-        SchedRing[SchedRingSize].CodeStart = Allocated;
         SchedRing[SchedRingSize].StackStart = SchedRing[SchedRingSize].rsp - 0x40000;
         SchedRing[SchedRingSize].rflags = 0x200;
+        SchedRing[SchedRingSize].SuspendIdx = 0;
+        SchedRing[SchedRingSize].Suspended = 0;
         SchedRingSize++;
     }
 }
@@ -137,7 +132,14 @@ void ExitProcess()
 {
     if (SchedRingSize == 0) return;
 
-    FreeVM(SchedRing[SchedRingIdx].CodeStart);
+    if (SchedRing[SchedRingIdx].SuspendIdx) SchedRing[SchedRing[SchedRingIdx].SuspendIdx - 1].Suspended = 0;
+
+    for (int i = 0;i < SchedRingSize;i++)
+    {
+        if (i == SchedRingIdx) continue;
+        if (SchedRing[i].SuspendIdx) if (SchedRing[i].SuspendIdx - 1 > SchedRingIdx) SchedRing[i].SuspendIdx--;
+    }
+
     FreeVM(SchedRing[SchedRingIdx].StackStart);
 
     for (int i = SchedRingIdx + 1;i < SchedRingSize;i++)
@@ -147,15 +149,53 @@ void ExitProcess()
 
     SchedRingSize--;
 
-    SchedRingIdx++;
-    
-    if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
+    SchedRingIdx = 0x7FFFFFFF;
 }
 
 extern char KeyQueue[KEY_QUEUE_SIZE];
 extern size_t KeyQueueIdx;
+extern int SuspendPIT;
 
-uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
+void _Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
+{
+    if (Code == 7)
+    {
+        FSMkdir((char*)rsi);
+    }
+    else if (Code == 8)
+    {
+        FSMkfile((char*)rsi);
+    }
+    else if (Code == 9)
+    {
+        FSRemove((char*)rsi);
+    }
+    else if (Code == 10)
+    {
+        FileRequest* Req = (FileRequest*)Selector;
+        FSWriteFile((char*)rsi, Req->Data, Req->Bytes);
+    }
+    else if (Code == 11)
+    {
+        FileResponse Response;
+        Response.Data = FSReadFile((char*)rsi, &Response.BytesRead);
+        *(FileResponse*)Selector = Response;
+    }
+    else if (Code == 12)
+    {
+        *(size_t*)Selector = FSFileSize((char*)rsi);
+    }
+    else if (Code == 13)
+    {
+        FileListResponse Response;
+        Response.Data = FSListFiles((char*)rsi, &Response.NumEntries);
+        *(FileListResponse*)Selector = Response;
+    }
+    ExitProcess();
+    while (1);
+}
+
+void _SyscallInline(uint64_t Code, uint64_t rsi, uint64_t Selector)
 {
     if (Code == 0)
     {
@@ -168,11 +208,6 @@ uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
     else if (Code == 2)
     {
         AddProcess(rsi, Selector);
-    }
-    else if (Code == 3)
-    {
-        ExitProcess();
-        return SchedRing + SchedRingIdx;
     }
     else if (Code == 4)
     {
@@ -284,40 +319,74 @@ uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
     {
         *(char*)rsi = KeyQueueIdx > 0 ? KeyQueue[--KeyQueueIdx] : 0;
     }
-    else if (Code == 7)
+}
+
+void AddSchedHandlerProcess(uint64_t Code, uint64_t rsi, uint64_t Selector)
+{
+    if ((SchedRingSize % 128) == 127) 
     {
-        FSMkdir((char*)rsi);
+        SoftTSS* NewRing = (SoftTSS*)AllocVM(sizeof(SoftTSS) * (SchedRingSize / 128 * 128 + 128));
+        for (int i = 0;i < SchedRingSize;i++)
+        {
+            NewRing[i] = SchedRing[i];
+        }
+        FreeVM((uint64_t)SchedRing);
+        SchedRing = NewRing;
     }
-    else if (Code == 8)
+
+    SchedRing[SchedRingSize].Privilege = 1;
+    SchedRing[SchedRingSize].cs = 0x18;
+    SchedRing[SchedRingSize].ds = 0x10;
+    SchedRing[SchedRingSize].rsi = rsi;
+    SchedRing[SchedRingSize].rdi = Code;
+    SchedRing[SchedRingSize].rdx = Selector;
+    SchedRing[SchedRingSize].rip = _Syscall;
+    SchedRing[SchedRingSize].rsp = AllocVM(0x40000) + 0x40000;
+    SchedRing[SchedRingSize].StackStart = SchedRing[SchedRingSize].rsp - 0x40000;
+    SchedRing[SchedRingSize].rflags = 0x200;
+    SchedRing[SchedRingSize].SuspendIdx = SchedRingIdx + 1;
+    SchedRing[SchedRingSize].Suspended = 0;
+    SchedRing[SchedRingIdx].Suspended = 1;
+    SchedRingSize++;
+}
+
+uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector, SoftTSS* SaveState)
+{
+    if (Code == 3)
     {
-        FSMkfile((char*)rsi);
+        ExitProcess();
+        SchedRingIdx = 0;
+        return SchedRing + SchedRingIdx;
     }
-    else if (Code == 9)
+
+    if (Code < 7)
     {
-        FSRemove((char*)rsi);
+        _SyscallInline(Code, rsi, Selector);
+        return 0;
     }
-    else if (Code == 10)
+
+    uint64_t Priv = SchedRing[SchedRingIdx].Privilege;
+    uint64_t StackStart = SchedRing[SchedRingIdx].StackStart;
+    uint64_t Suspended = SchedRing[SchedRingIdx].Suspended;
+    uint64_t SuspendIdx = SchedRing[SchedRingIdx].SuspendIdx;
+    SchedRing[SchedRingIdx] = *SaveState;
+    SchedRing[SchedRingIdx].Privilege = Priv;
+    SchedRing[SchedRingIdx].StackStart = StackStart;
+    SchedRing[SchedRingIdx].Suspended = Suspended;
+    SchedRing[SchedRingIdx].SuspendIdx = SuspendIdx;
+
+    AddSchedHandlerProcess(Code, rsi, Selector);
+
+    SchedRingIdx++;
+    if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
+
+    while (SchedRing[SchedRingIdx].Suspended)
     {
-        FileRequest* Req = (FileRequest*)Selector;
-        FSWriteFile((char*)rsi, Req->Data, Req->Bytes);
+        SchedRingIdx++;
+        if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
     }
-    else if (Code == 11)
-    {
-        FileResponse Response;
-        Response.Data = FSReadFile((char*)rsi, &Response.BytesRead);
-        *(FileResponse*)Selector = Response;
-    }
-    else if (Code == 12)
-    {
-        *(size_t*)Selector = FSFileSize((char*)rsi);
-    }
-    else if (Code == 13)
-    {
-        FileListResponse Response;
-        Response.Data = FSListFiles((char*)rsi, &Response.NumEntries);
-        *(FileListResponse*)Selector = Response;
-    }
-    return 0;
+
+    return SchedRing + SchedRingIdx;
 }
 
 /* Now init */
@@ -358,15 +427,7 @@ void IdtInit()
             IDTEntries[i].offset_1 = (((uint64_t)GeneralProtectionFaultS & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
-        else if (i == 0x70) // For NVME
-        {
-            IDTEntries[i].type_attributes = 0x8E;
-            IDTEntries[i].offset_3 = 0xFFFFFFFF;
-            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT70 & 0x00000000FFFF0000ULL) >> 16);
-            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT70 & 0x000000000000FFFFULL) >> 0);
-            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
-        }
-        else if (i < 32) // UNKNOWN FAULT
+        else if (i < 32)
         {
             IDTEntries[i].type_attributes = 0x8F;
             IDTEntries[i].offset_3 = (((uint64_t)UnknownFaultS & 0xFFFFFFFF00000000ULL) >> 32);
@@ -382,6 +443,14 @@ void IdtInit()
             IDTEntries[i].offset_1 = (((uint64_t)Handlers[i - 32] & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
+        else if (i == 0x70) // For NVME
+        {
+            IDTEntries[i].type_attributes = 0x8E;
+            IDTEntries[i].offset_3 = 0xFFFFFFFF;
+            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT70 & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT70 & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
+        }
         else if (i == 0x80)
         {
             IDTEntries[i].type_attributes = 0x8E | 0b01100000; // DPL is 3
@@ -390,8 +459,16 @@ void IdtInit()
             IDTEntries[i].offset_1 = (((uint64_t)SyscallS & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
+        else if (i == 0xFF)
+        {
+            IDTEntries[i].type_attributes = 0x8E | 0b01100000; // DPL is 3
+            IDTEntries[i].offset_3 = 0xFFFFFFFF;
+            IDTEntries[i].offset_2 = (((uint64_t)HandlerSpurious & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)HandlerSpurious & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
+        }
     }
     *(uint16_t*)0x7E50 = sizeof(IDTEntry) * 256 - 1;
     *(uint64_t*)0x7E52 = (uint64_t)IDTEntries;
-    LoadIDT();
+
 }

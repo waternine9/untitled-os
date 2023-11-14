@@ -43,10 +43,14 @@ typedef enum {
     BFBITS32 = 32
 } bf_bits;
 
+struct _bf_token;
+
 typedef struct _bf_type {
     bool IsStruct;
     bool IsFloat;
     LinkedList StructMembers;
+    void* ArrData;
+    struct _bf_token* ArrSize; // if 0, not an array
     bf_bits Bits;
     String Name;
 } bf_type;
@@ -68,6 +72,7 @@ typedef struct {
     char byteVal;
     int16_t shortVal;
     int32_t intVal;
+    void* assignDest; // only for array indexing
 } bf_constant;
 
 typedef struct {
@@ -78,7 +83,6 @@ typedef struct {
 } bf_variable;
 
 
-struct _bf_token;
 
 typedef struct _bf_scope {
     LinkedList Lines;

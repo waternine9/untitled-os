@@ -55,7 +55,8 @@ typedef struct {
 
     // EXTERNAL
     uint64_t Privilege;
-    uint64_t CodeStart;
     uint64_t StackStart;
+    uint64_t SuspendIdx;
+    uint64_t Suspended;
 } __attribute__((packed)) SoftTSS;
 
