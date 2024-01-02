@@ -157,11 +157,11 @@ align 16
 PageFaultS:
     pop r12
     PUSHA64
-    mov word [0xFFFFFFFF90000000], 0x0F00 | 'P'
-    mov word [0xFFFFFFFF90000002], 0x0F00 | 'A'
-    mov word [0xFFFFFFFF90000004], 0x0F00 | 'G'
-    mov word [0xFFFFFFFF90000006], 0x0F00 | 'E'
-    mov eax, 0x57575757
+    mov eax, 0x77777777
+    mov ecx, 0x10000
+.loop:
+    mov dword [0xFFFFFFFF90000000 + ecx], eax 
+    loop .loop
     cli
     hlt
     call PageFault
@@ -170,9 +170,11 @@ PageFaultS:
 
 GeneralProtectionFaultS:
     PUSHA64
-    mov word [0xFFFFFFFF90000000], 0x0F00 | 'G'
-    mov word [0xFFFFFFFF90000002], 0x0F00 | 'P'
-    mov eax, 0x47474747
+    mov eax, 0x22222222
+    mov ecx, 0x10000
+.loop:
+    mov dword [0xFFFFFFFF90000000 + ecx], eax 
+    loop .loop
     cli
     hlt
     call GeneralProtectionFault

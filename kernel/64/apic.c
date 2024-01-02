@@ -10,6 +10,7 @@ void* ApicVMAddr;
 void* IOApicAddr;
 void* IOApicVMAddr;
 uint32_t ApicID;
+uint32_t IOApicBaseInt;
 
 void SetApicBase(uint64_t apic) 
 {
@@ -119,45 +120,6 @@ void FindMadt()
     
 }
 
-void FindIOAPIC()
-{
-    IOApicAddr = 0;
-    rsdp = 0x7ED0;
-    
-    if (!rsdp->Xsdt && !rsdp->Revision) AllocIdMap(rsdp->Rsdt, 0x10000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-    else AllocIdMap(rsdp->Xsdt, 0x10000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-    Madt = 0;
-    FindMadt(); // First find MADT
-    if (!Madt)
-    {
-        *(uint32_t*)0xFFFFFFFF90000000 = 0xFFFFFFFF;
-        *(uint32_t*)0xFFFFFFFF90000004 = 0xFFFFFFFF;
-        *(uint32_t*)0xFFFFFFFF90000008 = 0xFFFFFFFF;
-        *(uint32_t*)0xFFFFFFFF9000000c = 0xFFFFFFFF;
-        asm volatile ("cli\nhlt");
-    }
-
-
-    uint8_t *MadtEnd = Madt + 0x2C + *(uint32_t*)(Madt + 4);
-    AllocIdMap(Madt + 0x2C, 0x1000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-    for (uint8_t *Ptr = Madt + 0x2C; Ptr < MadtEnd;Ptr += Ptr[1])
-    {
-        if (*Ptr == 1) IOApicAddr = *(uint32_t*)(Ptr + 4);
-        else if (*Ptr == 0) ApicID = *(uint8_t*)(Ptr + 3);
-    }
-
-    if (!IOApicAddr)
-    {
-        *(uint32_t*)0xFFFFFFFF90000000 = 0xFFFFFFFF;
-        *(uint32_t*)0xFFFFFFFF90000004 = 0xFFFFFFFF;
-        *(uint32_t*)0xFFFFFFFF90000008 = 0xFFFFFFFF;
-        *(uint32_t*)0xFFFFFFFF9000000c = 0xFFFFFFFF;
-        asm volatile ("cli\nhlt");
-    }
-
-    IOApicVMAddr = AllocVMAtPhys(IOApicAddr, 0x1000);
-}
-
 #define IOAPIC_IOREGSEL   0x00
 #define IOAPIC_IOWIN      0x10
 
@@ -178,8 +140,62 @@ void WriteIoApic(uint32_t reg, uint32_t value)
 void RemapIrqToVector(uint8_t Irq, uint8_t Vector) 
 {
     WriteIoApic(0x10 + 2*Irq, Vector);
-    WriteIoApic(0x11 + 2*Irq, ApicID << 24);
+    WriteIoApic(0x11 + 2*Irq, ReadReg(0x20) << 24);
 }
+
+void FindIOAPIC()
+{
+    IOApicAddr = 0;
+    rsdp = 0x7ED0;
+    
+    if (!rsdp->Xsdt && !rsdp->Revision) AllocIdMap(rsdp->Rsdt, 0x10000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
+    else AllocIdMap(rsdp->Xsdt, 0x10000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
+    Madt = 0;
+    FindMadt(); // First find MADT
+    if (!Madt)
+    {
+        *(uint32_t*)0xFFFFFFFF90000000 = 0xFFFFFFFF;
+        *(uint32_t*)0xFFFFFFFF90000004 = 0xFFFFFFFF;
+        *(uint32_t*)0xFFFFFFFF90000008 = 0xFFFFFFFF;
+        *(uint32_t*)0xFFFFFFFF9000000c = 0xFFFFFFFF;
+        asm volatile ("cli\nhlt");
+    }
+
+
+    uint8_t *MadtEnd = Madt + *(uint32_t*)(Madt + 4);
+    AllocIdMap(Madt + 0x2C, MadtEnd - Madt, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
+    for (uint8_t *Ptr = Madt + 0x2C; Ptr < MadtEnd;Ptr += Ptr[1])
+    {
+        if (*Ptr == 1) if (*(uint32_t*)(Ptr + 8) < 2)
+        {
+            IOApicAddr = *(uint32_t*)(Ptr + 4);
+            IOApicBaseInt = *(uint32_t*)(Ptr + 8);
+        }
+        if (*Ptr == 0) ApicID = *(uint8_t*)(Ptr + 3);
+    }
+    for (int i = 0;i < 10000;i++) *(uint32_t*)(0xFFFFFFFF90000000 + i * 4) = 0xFFFFFFFF;
+
+    if (!IOApicAddr)
+    {
+        *(uint32_t*)0xFFFFFFFF90000000 = 0xFFFFFFFF;
+        *(uint32_t*)0xFFFFFFFF90000004 = 0xFFFFFFFF;
+        *(uint32_t*)0xFFFFFFFF90000008 = 0xFFFFFFFF;
+        *(uint32_t*)0xFFFFFFFF9000000c = 0xFFFFFFFF;
+        asm volatile ("cli\nhlt");
+    }
+
+
+    IOApicVMAddr = AllocVMAtPhys(IOApicAddr, 0x1000);
+    for (uint8_t *Ptr = Madt + 0x2C; Ptr < MadtEnd;Ptr += Ptr[1])
+    {
+        if (*Ptr == 2) 
+        {
+            if (*(Ptr + 3) == 0 && *(uint32_t*)(Ptr + 4) == 2 && IOApicBaseInt == 1) asm volatile("cli\nhlt");
+            RemapIrqToVector(*(uint32_t*)(Ptr + 4), 32 + *(Ptr + 3));
+        }
+    }
+}
+
 
 void ApicInit() 
 {
@@ -190,10 +206,9 @@ void ApicInit()
     WriteReg(0xF0, (ReadReg(0xF0) | 0x1FF) & ~(1ULL << 12));
 
     WriteReg(0xE0, ReadReg(0xE0) | 0b1111U);
-
-    FindIOAPIC();
     
-    RemapIrqToVector(2, 32); // PIT
-    RemapIrqToVector(1, 33); // Keyboard
-    for (int i = 3;i < 16;i++) RemapIrqToVector(i, i + 32);
+    FindIOAPIC();
+    //RemapIrqToVector(2, 32);
+    RemapIrqToVector(1, 33);
+    
 }

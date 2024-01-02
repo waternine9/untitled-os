@@ -119,6 +119,7 @@ extern SoftTSS* SchedRing;
 extern int SchedRingSize;
 extern int SchedRingIdx;
 
+extern int Int70Fired;
 extern int SuspendPIT;
 
 extern void LoadIDT();
@@ -152,12 +153,14 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     PicInit();
     PicSetMask(0xFFFF);
     SuspendPIT = 1;
+    Int70Fired = 1;
     IdtInit();
     LoadIDT();
     ApicInit();
+
     NVMEInit();
 
-    FSFormat();
+    FSTryFormat();
 
     FSMkdir("home");
     FSMkdir("bin");
