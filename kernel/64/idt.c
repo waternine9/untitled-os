@@ -61,7 +61,14 @@ extern void HandlerIRQ13();
 extern void HandlerIRQ14();
 extern void HandlerIRQ15();
 extern void HandlerIVT70();
+extern void HandlerIVT71();
 extern void HandlerSpurious();
+
+void CHandlerIVT71(void)
+{
+    asm volatile ("cli\nhlt" :: "a"(0x4231));
+    ApicEOI();
+}
 
 void PageFault(void)
 {
@@ -444,6 +451,14 @@ void IdtInit()
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
         else if (i == 0x70) // For NVME
+        {
+            IDTEntries[i].type_attributes = 0x8E;
+            IDTEntries[i].offset_3 = 0xFFFFFFFF;
+            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT70 & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT70 & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
+        }
+        else if (i == 0x71) // For USB
         {
             IDTEntries[i].type_attributes = 0x8E;
             IDTEntries[i].offset_3 = 0xFFFFFFFF;

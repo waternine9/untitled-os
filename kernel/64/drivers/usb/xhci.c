@@ -15,17 +15,49 @@ typedef struct
     uint8_t CapLength;
     uint8_t Reserved0;
     uint16_t HciVersion;
+
     uint32_t MaxDeviceSlots : 8;
     uint32_t MaxInterrupters : 11;
     uint32_t Reserved1 : 5;
     uint32_t MaxPorts : 8;
-    uint32_t HcsParams1;
-    uint32_t HcsParams2;
-    uint32_t HcsParams3;
-    uint32_t HccParams1;
-    uint32_t DbOffset;
-    uint32_t RtsOff;
-    uint32_t HccParams2;
+    uint32_t IST : 4;
+    uint32_t ERSTMax : 4;
+    uint32_t Reserved2 : 13;
+    uint32_t MaxScratchpadBufsHi : 5;
+    uint32_t SPR : 1;
+    uint32_t MaxScratchpadBufsLo : 5;
+    uint32_t U1DeviceExitLatency : 8;
+    uint32_t Reserved3 : 8;
+    uint32_t U2DeviceExitLatency : 16;
+    uint32_t AC64 : 1;
+    uint32_t BNC : 1;
+    uint32_t CSZ : 1;
+    uint32_t PPC : 1;
+    uint32_t PIND : 1;
+    uint32_t LHRC : 1;
+    uint32_t LTC : 1;
+    uint32_t NSS : 1;
+    uint32_t PAE : 1;
+    uint32_t SPC : 1;
+    uint32_t SEC : 1;
+    uint32_t CFC : 1;
+    uint32_t MaxPSASize : 4;
+    uint32_t XECP : 16; 
+    uint32_t Reserved4 : 2;
+    uint32_t DBOffs : 30;
+    uint32_t Reserved5 : 5;
+    uint32_t RRSOffs : 27;
+    uint32_t U3C : 1;
+    uint32_t CMC : 1;
+    uint32_t FSC : 1;
+    uint32_t CTC : 1;
+    uint32_t LEC : 1;
+    uint32_t CIC : 1;
+    uint32_t TC : 1;
+    uint32_t ETC_TIC : 1;
+    uint32_t GIC : 1;
+    uint32_t VTC : 1;
+    uint32_t Reserved6 : 22;
 } xHC_CapRegisters;
 
 typedef struct
@@ -141,8 +173,6 @@ typedef struct
 } __attribute__((packed)) ERSTEntry; // Event Ring Segment Table Entry
 
 typedef struct
-
-typedef struct
 {
     SlotContext SlotCtx;
     EndpointContext EndpointCtx[31];
@@ -167,15 +197,67 @@ typedef struct
     uint32_t IntModInterval : 16;
     uint32_t IntModCounter : 16;
     uint32_t ERSTSize : 16;
-    uint32_t Reserved1 : 22;
+    uint32_t Reserved1 : 16;
+    uint64_t Reserved2 : 6;
     uint64_t ERSTBaseAddress : 58;
-    uint32_t DequeueERSTSegmentIdx : 3;
-    uint32_t EventHandlerBusy : 1;
+    uint64_t DequeueERSTSegmentIdx : 3;
+    uint64_t EventHandlerBusy : 1;
     uint64_t EventRingDequeuePtr : 60;
 } __attribute__((packed)) xHC_InterrupterRegisters;
 
+typedef struct 
+{
+    // 4 bytes (first dword)
+    uint32_t CCS : 1;
+    uint32_t PED : 1;
+    uint32_t Reserved0 : 1;
+    uint32_t OCA : 1;
+    uint32_t PortReset : 1;
+    uint32_t PLS : 4;
+    uint32_t PortPower : 1;
+    uint32_t PortSpeed : 4;
+    uint32_t PortIndicatorControl : 2;
+    uint32_t LWS : 1;
+    uint32_t CSC : 1;
+    uint32_t PEC : 1;
+    uint32_t WRC : 1;
+    uint32_t OCC : 1;
+    uint32_t PRC : 1;
+    uint32_t PLC : 1;
+    uint32_t CEC : 1;
+    uint32_t CAS : 1;
+    uint32_t WCE : 1;
+    uint32_t WDE : 1;
+    uint32_t WOE : 1;
+    uint32_t Reserved1 : 2; 
+    uint32_t DeviceRemovable : 1;
+    uint32_t WPR : 1;
+
+    // 4 bytes (second dword)
+    uint32_t U1Timeout : 8;
+    uint32_t U2Timeout : 8;
+    uint32_t FLA : 1;
+    uint32_t Reserved2: 15;
+    
+    // 4 bytes (third dword)
+    uint32_t L1S : 3;
+    uint32_t RWE : 1;
+    uint32_t BESL : 4;
+    uint32_t L1DeviceSlot : 8;
+    uint32_t HLE : 1;
+    uint32_t Reserved3 : 11;
+
+    // 4 bytes (fourth dword)
+    uint32_t PortTestControl : 4;
+    uint32_t LinkErrorCount: 16;
+    uint32_t RLC : 4;
+    uint32_t TLC : 4;
+    uint32_t Reserved4 : 8;
+} __attribute__((packed)) xHC_PortRegisters;
+
 typedef struct
 {
+    xHC_PortRegisters* PortRegs;
     xHC_CapRegisters* CapRegs;
     xHC_OpRegisters* OpRegs;
     uint64_t RunRegsBase;
@@ -185,7 +267,7 @@ typedef struct
 
     DeviceContext** DCBAA;
     CommandTRB* CommandRing;
-    ERSTEntry* ERST;
+    ERSTEntry* ERST[256];
 } xHC;
 
 static xHC xHCI_Controllers[MAX_CONTROLLERS];
@@ -198,11 +280,20 @@ void CheckXHC(pci_device_path Path)
     if (Specialty == PCI_DEVICE_XHCI)
     {
         xHC xhc;
-        xhc.CapRegs = ((uint64_t)Header.BAR1 << 32) | ((uint64_t)Header.BAR0);
-        xhc.CapRegs = AllocVMAtFlags(xhc.CapRegs, 0x10000, MALLOC_READWRITE_BIT | MALLOC_CACHE_DISABLE_BIT | MALLOC_USER_SUPERVISOR_BIT);
+        xhc.CapRegs = ((uint64_t)Header.BAR1 << 32) | ((uint64_t)Header.BAR0 & (~0b1111ULL));
+        xhc.CapRegs = AllocVMAtFlags(xhc.CapRegs, 0x1000, MALLOC_READWRITE_BIT | MALLOC_CACHE_DISABLE_BIT | MALLOC_USER_SUPERVISOR_BIT);
+        for (int a = 0; a < 10000000; a ++) {
+            IO_Wait();
+        } 
+        if (xhc.CapRegs->HciVersion == 0x0)
+        {
+            asm volatile("cli\nhlt" :: "a"( 0xAAAA ));
+        }
+        asm volatile("cli\nhlt" :: "a"( 0xBBBB ));
+        
         xhc.OpRegs = (uint8_t*)xhc.CapRegs + xhc.CapRegs->CapLength;
         while (xhc.OpRegs->UsbSts.CNR);
-        xhc.MaxSlots = xhc.CapRegs->HccParams1 & 0xFF;
+        xhc.MaxSlots = xhc.CapRegs->MaxDeviceSlots;
         xhc.OpRegs->Config |= xhc.MaxSlots;
         xhc.DCBAA = AllocPhys(sizeof(DeviceContext*) * xhc.MaxSlots);
         for (int i = 0;i < xhc.MaxSlots;i++)
@@ -249,18 +340,53 @@ void CheckXHC(pci_device_path Path)
             }
             CapPointer = PCI_Read8(Path, CapPointer + 0x1);
         }
-        xhc.ERST = AllocPhys(ERST_SIZE * sizeof(ERSTEntry));
-        for (int i = 0;i < ERST_SIZE;i++)
-        {
-            xhc.ERST[i].RingSegmentBaseAddress = AllocPhys(sizeof(NormalTRB) * EVENT_RING_SIZE) >> 6;
-            xhc.ERST[i].RingSegmentSize = EVENT_RING_SIZE;
-        }
-        xhc.RunRegsBase = (uint64_t)xhc.CapRegs + xhc.CapRegs->RtsOff & (~0x1FULL);
+        
+        xhc.RunRegsBase = (uint64_t)xhc.CapRegs + (uint64_t)xhc.CapRegs->RRSOffs;
         xhc.IntRegs = xhc.RunRegsBase + 0x20;
+        
+        size_t ActiveInterruptors = xhc.CapRegs->MaxInterrupters;
+        
+        for (size_t i = 0;i < ActiveInterruptors; i++)
+        {
+            xhc.ERST[i] = AllocPhys(ERST_SIZE * sizeof(ERSTEntry));
+            for (int j = 0;j < ERST_SIZE;j++)
+            {
+                xhc.ERST[i][j].RingSegmentBaseAddress = AllocPhys(sizeof(NormalTRB) * EVENT_RING_SIZE) >> 6;
+                xhc.ERST[i][j].RingSegmentSize = EVENT_RING_SIZE;
+            }
 
-        xhc.IntRegs[0].ERSTSize = ERST_SIZE;
-        xhc.IntRegs[0].EventRingDequeuePtr = (uint64_t)xhc.ERST >> 4;
+            xhc.IntRegs[i].ERSTSize = ERST_SIZE;
+            xhc.IntRegs[i].EventRingDequeuePtr = (uint64_t)xhc.ERST[i][0].RingSegmentBaseAddress >> 4;
+            xhc.IntRegs[i].ERSTBaseAddress = (uint64_t)xhc.ERST[i] >> 6;
+            xhc.IntRegs[i].IntModInterval = 4000;
+            xhc.IntRegs[i].IntEnable = 1;
+        }
+
+        xhc.PortRegs = (uint8_t*)xhc.OpRegs + 0x400;
+
+        xhc.OpRegs->UsbCmd.IntEnable = 1;
+        xhc.OpRegs->UsbCmd.RunStop = 1;
+
+        xHCI_Controllers[xHCI_NumControllers++] = xhc;
     }
+}
+
+
+static size_t NumPortsEnabled(xHC *xhc)
+{
+    size_t NumPorts = 0;
+
+
+    for (int i = 0;i < xhc->CapRegs->MaxDeviceSlots;i++)
+    {
+        for (int j = 0;j < 1000;j++)
+        {
+            if (xhc->PortRegs[i].CCS) break;
+        }
+
+        if (xhc->PortRegs[i].CCS) NumPorts++;
+    }
+    return NumPorts;
 }
 
 // Also initializes Host Controllers
@@ -296,4 +422,5 @@ void XHCIInit()
 {
     xHCI_NumControllers = 0;
     ScanForXHC();
+    asm volatile("cli\nhlt" :: "a"(NumPortsEnabled(&xHCI_Controllers[0])));
 }

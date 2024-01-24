@@ -118,35 +118,41 @@ volatile void FreePage(PageMapTable* BasePte, uint64_t vAddr, int Depth)
     BasePte[Index].Data = 0;
 }
 
-volatile bool AllocIdMap(uint64_t Addr, uint64_t Size, uint64_t Flags)
-{
-    for (uint64_t i = 0;i <= Size / 0x1000;i++)
-    {
-        if (!AllocPage(Tier4, Addr + i * 0x1000, Addr + i * 0x1000, 0, Flags)) return false;
-    }
-    return true;
-}
-
-volatile bool AllocMap(uint64_t vAddr, uint64_t pAddr, uint64_t Size, uint64_t Flags)
-{
-    for (uint64_t i = 0;i <= Size / 0x1000;i++)
-    {
-        if (!AllocPage(Tier4, vAddr + i * 0x1000, pAddr + i * 0x1000, 0, Flags)) return false;
-    }
-    return true;
-}
-
 static inline void Flush() 
 {    
    asm volatile("mov $0x10000000, %rax\nmov %rax, %cr3");
 }
 
+volatile bool AllocIdMap(uint64_t Addr, uint64_t Size, uint64_t Flags)
+{
+    // FIXME: If the size is the factor of 0x1000 it will allocate an extra page
+    for (uint64_t i = 0;i <= Size / 0x1000;i++)
+    {
+        if (!AllocPage(Tier4, Addr + i * 0x1000, Addr + i * 0x1000, 0, Flags)) return false;
+    }
+    Flush();
+    return true;
+}
+
+volatile bool AllocMap(uint64_t vAddr, uint64_t pAddr, uint64_t Size, uint64_t Flags)
+{
+    // FIXME: If the size is the factor of 0x1000 it will allocate an extra page
+    for (uint64_t i = 0;i <= Size / 0x1000;i++)
+    {
+        if (!AllocPage(Tier4, vAddr + i * 0x1000, pAddr + i * 0x1000, 0, Flags)) return false;
+    }
+    Flush();
+    return true;
+}
+
 volatile void AllocUnMap(uint64_t vAddr, uint64_t Size)
 {
+    // FIXME: If the size is the factor of 0x1000 it will free an extra page
     for (uint64_t i = 0;i <= Size / 0x1000;i++)
     {
         FreePage(Tier4, vAddr + i * 0x1000, 0);
     }
+    Flush();
 }
 
 #define PHYS_TAKEN_SIZE (0x80000000 / 0x1000)
