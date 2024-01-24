@@ -1,0 +1,1 @@
+qemu-system-x86_64 -hda bin/boot.img -drive file=bin/storage.disk,format=raw,if=none,id=nvm -device nvme,serial=deadbeef,id=nvme-ctrl-0 -device nvme-ns,drive=nvm,nsid=1 -m 4G -smp 1 -device qemu-xhci -device usb-mouse

@@ -1,0 +1,21 @@
+{
+    "files.associations": {
+        "include.h": "c",
+        "vmalloc.h": "c",
+        "draw.h": "c",
+        "drawman.h": "c",
+        "softtss.h": "c",
+        "ps2.h": "c",
+        "ide.h": "c",
+        "pci.h": "c",
+        "pic.h": "c",
+        "idt.h": "c",
+        "keyboard.h": "c",
+        "xutility": "cpp",
+        "format": "cpp",
+        "initializer_list": "cpp",
+        "xstring": "cpp",
+        "type_traits": "cpp",
+        "xiosbase": "cpp"
+    }
+}
