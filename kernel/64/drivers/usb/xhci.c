@@ -3,7 +3,9 @@
 #include "../../vmalloc.h"
 #include "../../idt.h"
 #include "../../io.h"
+#include "../../iomem.h"
 #include "../../apic.h"
+#include "../../sleep.h"
 
 #define MAX_CONTROLLERS 256
 #define COMMAND_RING_SIZE 64
@@ -58,7 +60,7 @@ typedef struct
     uint32_t GIC : 1;
     uint32_t VTC : 1;
     uint32_t Reserved6 : 22;
-} xHC_CapRegisters;
+} __attribute__((packed)) xHC_CapRegisters;
 
 typedef struct
 {
@@ -276,22 +278,51 @@ static int xHCI_NumControllers;
 void CheckXHC(pci_device_path Path)
 {
     pci_device_header Header = PCI_QueryDeviceHeader(Path);
+
     pci_device_specialty Specialty = PCI_QueryDeviceSpecialty(Header);
+
     if (Specialty == PCI_DEVICE_XHCI)
     {
         xHC xhc;
         xhc.CapRegs = ((uint64_t)Header.BAR1 << 32) | ((uint64_t)Header.BAR0 & (~0b1111ULL));
         xhc.CapRegs = AllocVMAtFlags(xhc.CapRegs, 0x1000, MALLOC_READWRITE_BIT | MALLOC_CACHE_DISABLE_BIT | MALLOC_USER_SUPERVISOR_BIT);
-        for (int a = 0; a < 10000000; a ++) {
-            IO_Wait();
-        } 
-        if (xhc.CapRegs->HciVersion == 0x0)
-        {
-            asm volatile("cli\nhlt" :: "a"( 0xAAAA ));
-        }
-        asm volatile("cli\nhlt" :: "a"( 0xBBBB ));
-        
         xhc.OpRegs = (uint8_t*)xhc.CapRegs + xhc.CapRegs->CapLength;
+
+
+        USBCMD usbcmd;
+        USBSTS usbsts;
+        IOMEM_READ_VALUE(&usbsts, &xhc.OpRegs->UsbSts);
+        IOMEM_READ_VALUE(&usbcmd, &xhc.OpRegs->UsbCmd);
+
+        usbcmd.HCReset = 1;
+        IOMEM_WRITE_VALUE(&xhc.OpRegs->UsbCmd, &usbcmd);
+
+        bool ready = 0;
+        for (int i = 0;i < 100;i++)
+        {
+            Sleep(10);
+
+            IOMEM_READ_VALUE(&usbcmd, &xhc.OpRegs->UsbCmd);
+            IOMEM_READ_VALUE(&usbsts, &xhc.OpRegs->UsbSts);
+
+            ready = usbcmd.HCReset == 0 && usbsts.CNR == 0;
+            if (ready) break;
+        }
+
+        if (ready)
+        {
+            // If it hit this, then the controller was successfully reset
+            uint16_t hci_version;
+            IOMEM_READ_VALUE(&hci_version, &xhc.CapRegs->HciVersion);
+            asm volatile("cli\nhlt" :: "a"( hci_version ));
+        }
+        else
+        {
+            // If it hit this, then the controller was not successfully reset
+            asm volatile("cli\nhlt" :: "a"( *(uint32_t*)&usbcmd ));
+        }
+
+        
         while (xhc.OpRegs->UsbSts.CNR);
         xhc.MaxSlots = xhc.CapRegs->MaxDeviceSlots;
         xhc.OpRegs->Config |= xhc.MaxSlots;
@@ -375,7 +406,6 @@ void CheckXHC(pci_device_path Path)
 static size_t NumPortsEnabled(xHC *xhc)
 {
     size_t NumPorts = 0;
-
 
     for (int i = 0;i < xhc->CapRegs->MaxDeviceSlots;i++)
     {
