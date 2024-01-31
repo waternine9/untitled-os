@@ -5,6 +5,7 @@
 #include "../include.h"
 #include "msr.h"
 #include "vmalloc.h"
+#include "acpi.h"
 
 void* ApicVMAddr;
 void* IOApicAddr;
@@ -42,84 +43,6 @@ uint32_t ReadReg(int Offset)
     return *(uint32_t volatile*)(ApicVMAddr + Offset); 
 }
 
-typedef struct
-{
-    char Signature[4];
-    uint32_t Length;
-    uint8_t Revision;
-    uint8_t Checksum;
-    char OEMID[6];
-    char OEMTableID[8];
-    uint32_t OEMRevision;
-    uint32_t CreatorID;
-    uint32_t CreatorRevision;
-} __attribute__((packed)) acpi_sdt_header;
-
-typedef struct
-{
-    char Signature[8];
-    uint8_t Checksum;
-    char OEMID[6];
-    uint8_t Revision;
-    uint32_t Rsdt;
-
-    uint32_t Length;
-    uint64_t Xsdt;
-    uint8_t ExtendedChecksum;
-    uint8_t reserved[3];
-} __attribute__((packed)) rsdp_descriptor;
-
-rsdp_descriptor* rsdp;
-
-bool CompareSignature(char *a, char *b)
-{
-    for (int i = 0; i < 4; i++)
-    {
-        if (a[i] != b[i]) return false;
-    }
-    return true;
-}
-
-uint8_t *Madt;
-
-void FindMadt()
-{
-    if (!rsdp->Xsdt && !rsdp->Revision) 
-    {
-        uint32_t* TablePtrs = rsdp->Rsdt + 36;
-        uint32_t NumEntries = 0x1000;
-        for (uint32_t i = 0; i < NumEntries; i++)
-        {
-            acpi_sdt_header *TableHeader = (acpi_sdt_header*)TablePtrs[i];
-            AllocIdMap(TablePtrs[i], 0x1000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-            if (CompareSignature(TableHeader->Signature, "APIC"))
-            {
-                Madt = TableHeader;
-                return;
-            }
-            AllocUnMap(TablePtrs[i], 0x1000);
-        }
-    }
-    else 
-    {
-        uint64_t* TablePtrs = rsdp->Xsdt + 36;
-        uint32_t NumEntries = 0x1000;
-        for (uint32_t i = 0; i < NumEntries; i++)
-        {
-            acpi_sdt_header *TableHeader = (acpi_sdt_header*)TablePtrs[i];
-            AllocIdMap(TablePtrs[i], 0x1000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-            if (CompareSignature(TableHeader->Signature, "APIC"))
-            {
-                Madt = TableHeader;
-                return;
-            }
-            AllocUnMap(TablePtrs[i], 0x1000);
-        }
-    }
-
-    
-}
-
 #define IOAPIC_IOREGSEL   0x00
 #define IOAPIC_IOWIN      0x10
 
@@ -146,12 +69,8 @@ void RemapIrqToVector(uint8_t Irq, uint8_t Vector)
 void FindIOAPIC()
 {
     IOApicAddr = 0;
-    rsdp = 0x7ED0;
-    
-    if (!rsdp->Xsdt && !rsdp->Revision) AllocIdMap(rsdp->Rsdt, 0x10000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-    else AllocIdMap(rsdp->Xsdt, 0x10000, (1 << MALLOC_READWRITE_BIT) | (1 << MALLOC_CACHE_DISABLE_BIT));
-    Madt = 0;
-    FindMadt(); // First find MADT
+
+    uint8_t *Madt = ACPIFindTable("APIC"); // First find MADT
     if (!Madt)
     {
         *(uint32_t*)0xFFFFFFFF90000000 = 0xFFFFFFFF;
@@ -207,7 +126,8 @@ void ApicInit()
     WriteReg(0xE0, ReadReg(0xE0) | 0b1111U);
     
     FindIOAPIC();
+    
     //RemapIrqToVector(2, 32);
     RemapIrqToVector(1, 33);
-    
+    RemapIrqToVector(15, 0x72);
 }

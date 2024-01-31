@@ -15,7 +15,6 @@ int SuspendPIT;
 float MSTicks = 0; // IN MS
 SoftTSS* CHandlerIRQ0(SoftTSS* SaveState)
 {
-    
     MSTicks += 1000.0f / (1193182.0f) * 16000.0f;
     
     if (SchedRingIdx != 0x7FFFFFFF)

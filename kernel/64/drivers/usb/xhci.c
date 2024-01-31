@@ -314,12 +314,12 @@ void CheckXHC(pci_device_path Path)
             // If it hit this, then the controller was successfully reset
             uint16_t hci_version;
             IOMEM_READ_VALUE(&hci_version, &xhc.CapRegs->HciVersion);
-            asm volatile("cli\nhlt" :: "a"( hci_version ));
+            //asm volatile("cli\nhlt" :: "a"( hci_version ));
         }
         else
         {
             // If it hit this, then the controller was not successfully reset
-            asm volatile("cli\nhlt" :: "a"( *(uint32_t*)&usbcmd ));
+            //asm volatile("cli\nhlt" :: "a"( *(uint32_t*)&usbcmd ));
         }
 
         

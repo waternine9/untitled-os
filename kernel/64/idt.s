@@ -33,6 +33,7 @@ global HandlerIRQ14
 global HandlerIRQ15
 global HandlerIVT70
 global HandlerIVT71
+global HandlerIVT72
 global HandlerSpurious
 
 extern CHandlerIRQ0
@@ -53,6 +54,7 @@ extern CHandlerIRQ14
 extern CHandlerIRQ15
 extern CHandlerIVT70
 extern CHandlerIVT71
+extern CHandlerIVT72
 
 %macro PUSHA64 0
     
@@ -465,6 +467,13 @@ HandlerIVT71:
     cld
     PUSHA64
     call CHandlerIVT71
+    POPA64
+    iretq
+
+HandlerIVT72:
+    cld
+    PUSHA64
+    call CHandlerIVT72
     POPA64
     iretq
 

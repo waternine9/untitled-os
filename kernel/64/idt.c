@@ -62,7 +62,14 @@ extern void HandlerIRQ14();
 extern void HandlerIRQ15();
 extern void HandlerIVT70();
 extern void HandlerIVT71();
+extern void HandlerIVT72();
 extern void HandlerSpurious();
+
+void CHandlerIVT72(void)
+{
+    asm volatile ("cli\nhlt" :: "a"(0x1234));
+    ApicEOI();
+}
 
 void CHandlerIVT71(void)
 {
@@ -462,8 +469,16 @@ void IdtInit()
         {
             IDTEntries[i].type_attributes = 0x8E;
             IDTEntries[i].offset_3 = 0xFFFFFFFF;
-            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT70 & 0x00000000FFFF0000ULL) >> 16);
-            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT70 & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT71 & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT71 & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
+        }
+        else if (i == 0x72) // For HPET
+        {
+            IDTEntries[i].type_attributes = 0x8E;
+            IDTEntries[i].offset_3 = 0xFFFFFFFF;
+            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT72 & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT72 & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
         else if (i == 0x80)

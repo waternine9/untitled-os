@@ -3,6 +3,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "apic.h"
+#include "acpi.h"
 #include "softtss.h"
 #include "../vbe.h"
 #include "pci.h"
@@ -46,6 +47,7 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     SchedRingSize = 1;
     SchedRingIdx = 0;
 
+    ACPIInit();
     PicInit();
     PicSetMask(0xFFFF);
     SuspendPIT = 1;
@@ -54,6 +56,11 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     LoadIDT();
     ApicInit();
 
+    /*
+    if (!HPETInit()) 
+    {
+        asm volatile ("cli\nhlt" :: "a"(0xFFFF));
+    */
     NVMEInit();
 
     FSTryFormat();
