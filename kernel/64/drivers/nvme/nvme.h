@@ -2,6 +2,7 @@
 #define NVME_H
 
 #include "../../../include.h"
+#include "../driverman.h"
 
 typedef struct
 {
@@ -9,8 +10,6 @@ typedef struct
     bool Completed;
 } NVME_CmdStatus;
 
-void NVMEInit();
-bool NVMERead(size_t Num, uint32_t LBA, void* Dest);
-bool NVMEWrite(size_t Num, uint32_t LBA, void* Src);
+DriverMan_StorageDriver NVMe_GetDriver();
 
 #endif // NVME_H

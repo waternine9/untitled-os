@@ -1,9 +1,9 @@
 #ifndef IDE_H
 #define IDE_H
 
-#include "stdint.h"
+#include "../../../include.h"
+#include "../driverman.h"
 
-uint8_t IDEInit();
-void IDEReadBoot(uint64_t LBA, void* Out);
+void IDE_GetDriver();
 
 #endif // IDE_H

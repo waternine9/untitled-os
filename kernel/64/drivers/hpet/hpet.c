@@ -72,6 +72,15 @@ HPET *HPET_State;
 static uint64_t HPET_Freq;
 static uint16_t HPET_MinTick;
 
+// Returns -1 if no periodic timer found
+static int GetFirstPeriodicTimer(HPET* HPET_State)
+{
+    for (int i = 0;i < 32;i++)
+    {
+        if (HPET_State->Timers[i].Config.TimerPeriodicCapable) return i;
+    }
+    return -1;
+}
 
 bool HPETInit()
 {
@@ -87,20 +96,15 @@ bool HPETInit()
         HPET_RegConfig Config = HPET_State->Config;
         Config.EnableCnf = 1;
         HPET_State->Config = Config;
-        
 
-        // TODO: Find periodic capable timer instead of checking just the first one
-        HPET_Timer timer = HPET_State->Timers[2];
-        timer.Config.TimerInterruptNo = 15;
-        timer.Config.InterruptEnable = 1;
-        if (!timer.Config.TimerPeriodicCapable)
-        {
-            return false;
-        }
-        timer.Config.TimerType = 1;
-        timer.Config.TimerValueSet = 1;
-        timer.ComparatorValue = HPET_State->MainCounterValue + 10000000;
-        HPET_State->Timers[2] = timer;
+        int TimerIdx = GetFirstPeriodicTimer(HPET_State);
+        if (TimerIdx == -1) return false;
+        HPET_Timer* timer = &HPET_State->Timers[TimerIdx];
+        timer->Config.TimerType = 1;
+        timer->Config.TimerValueSet = 1;
+        timer->ComparatorValue = HPET_State->MainCounterValue + 10000000;
+        timer->Config.TimerInterruptNo = 15;
+        timer->Config.InterruptEnable = 1;
     }
 
     return HPET_TBL;

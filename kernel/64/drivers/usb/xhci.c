@@ -452,5 +452,5 @@ void XHCIInit()
 {
     xHCI_NumControllers = 0;
     ScanForXHC();
-    asm volatile("cli\nhlt" :: "a"(NumPortsEnabled(&xHCI_Controllers[0])));
+    //asm volatile("cli\nhlt" :: "a"(NumPortsEnabled(&xHCI_Controllers[0])));
 }
