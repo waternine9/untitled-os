@@ -1,7 +1,7 @@
 #include "syscall.h"
 #include "scheduler.h"
 #include "draw.h"
-#include "drivers/fs/fs.h"
+#include "drivers/driverman.h"
 
 #define KEY_QUEUE_SIZE 64
 
@@ -70,37 +70,41 @@ static void SyscallInline(uint64_t Code, uint64_t rsi, uint64_t Selector)
 
 static void SyscallIndirect(uint64_t Code, uint64_t rsi, uint64_t Selector)
 {
+    DriverMan_StorageDevice** StorageDevices;
+    size_t StorageDevicesCount;
+    DriverMan_GetStorageDevices(&StorageDevices, &StorageDevicesCount);
+    
     if (Code == 7)
     {
-        FSMkdir((char*)rsi);
+        DriverMan_FilesysMakeDir(StorageDevices[0], (char*)rsi);
     }
     else if (Code == 8)
     {
-        FSMkfile((char*)rsi);
+        DriverMan_FilesysMakeFile(StorageDevices[0], (char*)rsi);
     }
     else if (Code == 9)
     {
-        FSRemove((char*)rsi);
+        DriverMan_FilesysRemove(StorageDevices[0], (char*)rsi);
     }
     else if (Code == 10)
     {
         FileRequest* Req = (FileRequest*)Selector;
-        FSWriteFile((char*)rsi, Req->Data, Req->Bytes);
+        DriverMan_FilesysWriteFile(StorageDevices[0], (char*)rsi, Req->Data, Req->Bytes);
     }
     else if (Code == 11)
     {
         FileResponse Response;
-        Response.Data = FSReadFile((char*)rsi, &Response.BytesRead);
+        Response.Data = DriverMan_FilesysReadFile(StorageDevices[0], (char*)rsi, &Response.BytesRead);
         *(FileResponse*)Selector = Response;
     }
     else if (Code == 12)
     {
-        *(size_t*)Selector = FSFileSize((char*)rsi);
+        *(size_t*)Selector = DriverMan_FilesysFileSize(StorageDevices[0], (char*)rsi);
     }
     else if (Code == 13)
     {
         FileListResponse Response;
-        Response.Data = FSListFiles((char*)rsi, &Response.NumEntries);
+        Response.Data = DriverMan_FilesysListFiles(StorageDevices[0], (char*)rsi, &Response.NumEntries);
         *(FileListResponse*)Selector = Response;
     }
     Scheduler_EndCurrentProcess(false);

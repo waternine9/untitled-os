@@ -1,7 +1,7 @@
 build:
 	mkdir -p bin
 	gcc -m32 kernel/32/*.c -nostdlib -ffreestanding -fno-stack-protector -fno-stack-check -mno-red-zone -fno-exceptions -nodefaultlibs -fno-builtin -fno-pic -fno-pie -O2 -T link32.ld -o paging32.img
-	gcc -c -m64 kernel/64/*.c kernel/64/drivers/*/*.c -nostdlib -ffreestanding -fno-stack-protector -fno-stack-check -mno-red-zone -fno-exceptions -nodefaultlibs -fno-builtin -fno-pic -fno-pie -mcmodel=large -fcf-protection=none -O0 -w
+	gcc -c -m64 kernel/64/*.c kernel/64/drivers/*/*.c kernel/64/drivers/*.c -nostdlib -ffreestanding -fno-stack-protector -fno-stack-check -mno-red-zone -fno-exceptions -nodefaultlibs -fno-builtin -fno-pic -fno-pie -mcmodel=large -fcf-protection=none -O0 -w
 	nasm -f elf64 kernel/64/idt.s -o idt_s.o
 	nasm -f elf64 kernel/64/drivers/ide/ata.s -o ide_ata.o
 	ld -m elf_x86_64 -T link64.ld *.o -o kernel.img

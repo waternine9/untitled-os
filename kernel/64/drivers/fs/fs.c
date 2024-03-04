@@ -22,9 +22,16 @@
 #define FS_ENTRY_MYBLOCK_SHIFT 1ULL
 #define FS_ENTRY_MYBLOCK_MASK 0xFFFFFFFFULL
 
+static DriverMan_StorageDevice* FSDevice;
+
 static void FS_DriveRead(size_t Num, size_t LBA, void* Dest)
 {
-	
+	DriverMan_StorageReadFromDevice(FSDevice, Num, LBA, Dest);
+}
+
+static void FS_DriveWrite(size_t Num, size_t LBA, void* Dest)
+{
+	DriverMan_StorageWriteToDevice(FSDevice, Num, LBA, Dest);
 }
 
 typedef struct
@@ -84,12 +91,14 @@ static void FSFormat()
 	FS_DriveWrite(2, 4, FirstData);
 }
 
-static void FSTryFormat()
+static bool FSTryFormat()
 {
 	if (!FSIsFormatted())
 	{
 		FSFormat();
+		return true;
 	}
+	return false;
 }
 
 static FSBlockHeader FSQueryHeader(int Block)
@@ -974,4 +983,88 @@ static FileListEntry* FSListFiles(char* Dir, size_t* NumEntries)
 		
 		i++;
 	}
+}
+
+static void CustomFS_Driver_Init(DriverMan_FilesystemDriver* MyDriver)
+{
+	// No initialization needed
+}
+
+static void CustomFS_Driver_Format(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device)
+{
+	FSDevice = Device;
+	FSFormat();
+}
+
+static bool CustomFS_Driver_TryFormat(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device)
+{
+	FSDevice = Device;
+	return FSTryFormat();
+}
+
+static bool CustomFS_Driver_IsFormatted(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device)
+{
+	FSDevice = Device;
+	return FSIsFormatted();
+}
+
+static FileListEntry* CustomFS_Driver_ListFiles(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* Dir, size_t* NumFiles)
+{
+	FSDevice = Device;
+	return FSListFiles(Dir, NumFiles);
+}
+
+static bool CustomFS_Driver_MakeFile(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* File)
+{
+	FSDevice = Device;
+	return FSMkfile(File);
+}
+
+static bool CustomFS_Driver_MakeDir(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* Dir)
+{
+	FSDevice = Device;
+	return FSMkdir(Dir);
+}
+
+static bool CustomFS_Driver_WriteFile(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* File, void* Data, size_t Bytes)
+{
+	FSDevice = Device;
+	return FSWriteFile(File, Data, Bytes);
+}
+
+static void* CustomFS_Driver_ReadFile(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* File, size_t* BytesRead)
+{
+	FSDevice = Device;
+	return FSReadFile(File, BytesRead);
+}
+
+static size_t CustomFS_Driver_FileSize(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* File)
+{
+	FSDevice = Device;
+	return FSFileSize(File);
+}
+
+static bool CustomFS_Driver_Remove(DriverMan_FilesystemDriver* MyDriver, DriverMan_StorageDevice* Device, char* AnyDir)
+{
+	FSDevice = Device;
+	return FSRemove(AnyDir);
+}
+
+DriverMan_FilesystemDriver* CustomFS_GetDriver()
+{
+	DriverMan_FilesystemDriver* OutDriver = AllocVM(sizeof(DriverMan_FilesystemDriver));
+	
+	OutDriver->Header.Name = "CustomFS";
+	OutDriver->Header.Version = 0x00010000;
+	OutDriver->DriverInit = CustomFS_Driver_Init;
+	OutDriver->FilesysFormat = CustomFS_Driver_Format;
+	OutDriver->FilesysTryFormat = CustomFS_Driver_TryFormat;
+	OutDriver->FilesysListFiles = CustomFS_Driver_ListFiles;
+	OutDriver->FilesysMakeFile = CustomFS_Driver_MakeFile;
+	OutDriver->FilesysMakeDir = CustomFS_Driver_MakeDir;
+	OutDriver->FilesysWriteFile = CustomFS_Driver_WriteFile;
+	OutDriver->FilesysReadFile = CustomFS_Driver_ReadFile;
+	OutDriver->FilesysRemove = CustomFS_Driver_Remove;
+	OutDriver->FilesysIsFormatted = CustomFS_Driver_IsFormatted;
+	OutDriver->FilesysFileSize = CustomFS_Driver_FileSize;
 }

@@ -119,11 +119,11 @@ static bool SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO
     Pair->Tail = (Pair->Tail + 1) % Pair->NumEntries;
     CommandCompleted = 0;
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride) = Pair->Tail;
-    while (!Int70Fired) IO_In8(0x80);
+    while (!CommandCompleted) IO_In8(0x80);
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride + Controller->DoorbellStride) = Pair->Tail;
     SuspendPIT = 0;
     
-    uint8_t StatusCode = Pair->Completion[Pair->CompletionHead] << 49;
+    uint8_t StatusCode = Pair->Completion[Pair->CompletionHead].High << 49;
     Pair->CompletionHead = (Pair->CompletionHead + 1) % Pair->NumEntries;
 
     return StatusCode == 0;
@@ -177,10 +177,8 @@ static void CreateIOPair(NVME_Controller* Controller)
     Controller->IOPairCount++;
 }
 
-static void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Dest)
+static void ReadSectors(NVME_Controller* Controller, uint32_t NSID, uint64_t LBA, uint32_t Num, uint64_t Dest)
 {
-    while (!Int70Fired) IO_Wait();
-
     uint64_t* PRPList = ForceAlign(AllocPhys(0x1000 + Controller->PageSize), Controller->PageSize);
     for (int i = 1;i < (Num * 512) / Controller->PageSize;i++)
     {
@@ -189,7 +187,7 @@ static void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num,
     
     NVME_Command Command;
     Command.DWORD0 = NVME_OPCODE_READ;
-    Command.NSID = Controller->NSIDs[0];
+    Command.NSID = NSID;
     Command.Reserved = 0;
     
     Command.PRP0 = Dest;
@@ -219,9 +217,8 @@ static void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num,
     FreeVM(Command.MetadataPtr);
 }
 
-static void WriteSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Src)
+static void WriteSectors(NVME_Controller* Controller, uint32_t NSID, uint64_t LBA, uint32_t Num, uint64_t Src)
 {
-    while (!Int70Fired) IO_Wait();
     uint64_t* PRPList = ForceAlign(AllocPhys(0x1000 + Controller->PageSize), Controller->PageSize);
     for (int i = 1;i < (Num * 512) / Controller->PageSize;i++)
     {
@@ -230,7 +227,7 @@ static void WriteSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num
     
     NVME_Command Command;
     Command.DWORD0 = NVME_OPCODE_WRITE;
-    Command.NSID = Controller->NSIDs[0];
+    Command.NSID = NSID;
     Command.Reserved = 0;
     
     Command.PRP0 = Src;

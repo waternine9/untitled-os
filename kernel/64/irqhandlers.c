@@ -4,6 +4,7 @@
 #include "../vbe.h"
 #include "softtss.h"
 #include "scheduler.h"
+#include "drivers/driverman.h"
 #include <stdatomic.h>
 
 
@@ -15,6 +16,8 @@ SoftTSS* CHandlerIRQ0(SoftTSS* SaveState)
     MSTicks += 1000.0f / (1193182.0f) * 16000.0f;
     
     SoftTSS* NextState = Scheduler_NextProcess(SaveState);
+
+    DriverMan_Run();
 
     ApicEOI();
 

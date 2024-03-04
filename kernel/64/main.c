@@ -15,7 +15,6 @@
 
 #define FRAMEBUFFER_VM 0xFFFFFFFF90000000
 
-extern int Int70Fired;
 extern int SuspendPIT;
 
 volatile uint64_t __attribute__((section(".main64"))) main64()
@@ -44,16 +43,14 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     PicInit();
     PicSetMask(0xFFFF);
     SuspendPIT = 1;
-    Int70Fired = 1;
     IDT_Init();
     LoadIDT();
     ApicInit();
 
-    // FSTryFormat();
-    // FSMkdir("home");
-    // FSMkdir("bin");
-    // FSMkdir("etc");
-    // FSMkdir("sys");
+    DriverMan_StorageDevice** StorageDevices;
+    size_t StorageDevicesCount;
+    DriverMan_GetStorageDevices(&StorageDevices, &StorageDevicesCount);
+    DriverMan_FilesysFormat(StorageDevices[0], "CustomFS"); 
 
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) KernelPanic("PANIC: Failed to allocate OS stack!");
     
