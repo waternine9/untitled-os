@@ -5,8 +5,7 @@
 
 typedef struct
 {
-    char* Name;
-    size_t NameLen;
+    const char* Name;
     uint32_t Version; // Low 16 bits: Minor version, High 16 bits: Major version
 } DriverMan_DriverHeader;
 
@@ -16,7 +15,7 @@ typedef struct
 {
     struct _DriverMan_StorageDriver* ParentDriver; // The driver that controls the device
     size_t MyID; // The index of the device in it's parent driver's device list
-    size_t MyUID; // The unique identifier of this device (not unique across different` drivers), useful for checking if the device is still in the parent driver's devices list
+    size_t MyUID; // The unique identifier of this device (not unique across different drivers), useful for checking if the device is still in the parent driver's devices list
     size_t MaxReadSectorCount; // When performing a read operation, the amount of sectors to read can never be above this value
     size_t MaxWriteSectorCount; // When performing a write operation, the amount of sectors to read can never be above this value
     size_t Capacity; // Size of the storage device in bytes
@@ -24,9 +23,9 @@ typedef struct
 
 typedef struct _DriverMan_StorageDriver
 {
-    DriverMan_DriverHeader header;
+    DriverMan_DriverHeader Header;
 
-    bool NeedsIRQ;
+    bool NeedsIRQ; // The driver sets this to true in its Init function if it needs an IRQ allocated for it
 
     size_t IRQ; // The IRQ that this driver is using for interrupts
     void(*DriverIRQ)(); // This is the IRQ handler for the driver
@@ -35,10 +34,10 @@ typedef struct _DriverMan_StorageDriver
     size_t NumDevices;
 
     void(*DriverInit)(struct _DriverMan_StorageDriver* MyDriver); // The driver must have the Devices member fully allocated and filled out by the end of this function
-    void(*DriverFree)(struct _DriverMan_StorageDriver* MyDriver); // This function is called when it has been requested that this driver shuts down
+    // void(*DriverFree)(struct _DriverMan_StorageDriver* MyDriver); // This function is called when it has been requested that this driver shuts down
     void(*DriverRun)(struct _DriverMan_StorageDriver* MyDriver); // This function runs repeatedly so that the driver can do things like refresh the connected devices
-    bool(*StorageRead)(size_t NumSectors, uint32_t LBA, void* Dest);
-    bool(*StorageWrite)(size_t NumSectors, uint32_t LBA, void* Src);
+    bool(*StorageRead)(DriverMan_StorageDevice* Device, size_t NumSectors, uint32_t LBA, void* Dest);
+    bool(*StorageWrite)(DriverMan_StorageDevice* Device, size_t NumSectors, uint32_t LBA, void* Src);
 } DriverMan_StorageDriver;
 
 typedef struct _DriverMan_Manager

@@ -1,3 +1,6 @@
+#ifndef SOFTTSS_H
+#define SOFTTSS_H
+
 #include "../include.h"
 
 typedef struct {
@@ -60,3 +63,4 @@ typedef struct {
     uint64_t Suspended;
 } __attribute__((packed)) SoftTSS;
 
+#endif // SOFTTSS_H

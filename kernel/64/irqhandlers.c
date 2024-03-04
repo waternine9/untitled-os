@@ -3,12 +3,9 @@
 #include "io.h"
 #include "../vbe.h"
 #include "softtss.h"
-#include "keyboard.h"
+#include "scheduler.h"
 #include <stdatomic.h>
 
-int SchedRingIdx = 0;
-SoftTSS* SchedRing = 0;
-int SchedRingSize = 0;
 
 int SuspendPIT;
 
@@ -17,45 +14,14 @@ SoftTSS* CHandlerIRQ0(SoftTSS* SaveState)
 {
     MSTicks += 1000.0f / (1193182.0f) * 16000.0f;
     
-    if (SchedRingIdx != 0x7FFFFFFF)
-    {
-        if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
-        if (SchedRingIdx < 0) SchedRingIdx = 0;
-
-        if (SchedRingSize <= 0) SchedRingSize = 1;
-
-        uint64_t Priv = SchedRing[SchedRingIdx].Privilege;
-        uint64_t StackStart = SchedRing[SchedRingIdx].StackStart;
-        uint64_t Suspended = SchedRing[SchedRingIdx].Suspended;
-        uint64_t SuspendIdx = SchedRing[SchedRingIdx].SuspendIdx;
-        SchedRing[SchedRingIdx] = *SaveState;
-        SchedRing[SchedRingIdx].Privilege = Priv;
-        SchedRing[SchedRingIdx].StackStart = StackStart;
-        SchedRing[SchedRingIdx].Suspended = Suspended;
-        SchedRing[SchedRingIdx].SuspendIdx = SuspendIdx;
-    }
-    else
-    {
-        SchedRingIdx = 0;
-    }
-
-    if (SuspendPIT == 0)
-    {
-        SchedRingIdx++;
-        if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
-
-        while (SchedRing[SchedRingIdx].Suspended)
-        {
-            SchedRingIdx++;
-            if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
-        }
-    }
+    SoftTSS* NextState = Scheduler_NextProcess(SaveState);
 
     ApicEOI();
 
-    return SchedRing + SchedRingIdx;
+    return NextState;
 }
 
+#define KEY_QUEUE_SIZE 128
 char KeyQueue[KEY_QUEUE_SIZE];
 size_t KeyQueueIdx = 0;
 

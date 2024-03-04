@@ -4,6 +4,8 @@
 
 static DriverMan_Manager Manager;
 
+extern void** DriverIrqTable;
+
 void DriverMan_RegisterStorageDriver(DriverMan_StorageDriver* Driver)
 {
 
@@ -35,9 +37,13 @@ void DriverMan_Init()
 
     for (int i = 0;i < Manager.NumStorageDrivers;i++)
     {
-        Manager.StorageDrivers[i]->IRQ = Manager.NextIRQ++;
-        Manager.StorageDrivers[i]->DriverInit(Manager.StorageDrivers[i]);
-        
+        if (Manager.StorageDrivers[i]->NeedsIRQ)
+        {
+            Manager.StorageDrivers[i]->IRQ = Manager.NextIRQ++;
+            DriverIrqTable[i] = Manager.StorageDrivers[i]->DriverIRQ;
+            Manager.StorageDrivers[i]->DriverInit(Manager.StorageDrivers[i]);
+        }
+
         size_t OriginalNum = Manager.NumStorageDevices;
         Manager.NumStorageDevices += Manager.StorageDrivers[i]->NumDevices;
         DriverMan_StorageDevice** NewDevices = AllocVM(sizeof(DriverMan_StorageDevice*) * Manager.NumStorageDevices);

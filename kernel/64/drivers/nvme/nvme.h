@@ -10,6 +10,6 @@ typedef struct
     bool Completed;
 } NVME_CmdStatus;
 
-DriverMan_StorageDriver NVMe_GetDriver();
+DriverMan_StorageDriver* NVMe_GetDriver();
 
 #endif // NVME_H

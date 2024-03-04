@@ -3,6 +3,7 @@
 
 #include "../include.h"
 
-void IdtInit();
+void IDT_Init();
+extern void LoadIDT();
 
 #endif // IDT_H

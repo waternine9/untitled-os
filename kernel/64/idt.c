@@ -1,13 +1,8 @@
 #include "idt.h"
 #include "vmalloc.h"
-#include "softtss.h"
-#include "../file.h"
-#include "../draw.h"
-#include "../vbe.h"
-#include "font.h"
-#include "keyboard.h"
-#include "drivers/fs/fs.h"
 #include "apic.h"
+#include "syscall.h"
+#include "panic.h"
 
 #define PRESENT_BIT 47
 #define DPL_BIT 45
@@ -44,6 +39,17 @@ extern void TSSFaultS();
 extern void SyscallS();
 extern void OSStartS();
 
+extern void DriverIrqS_0();
+extern void DriverIrqS_1();
+extern void DriverIrqS_2();
+extern void DriverIrqS_3();
+extern void DriverIrqS_4();
+extern void DriverIrqS_5();
+extern void DriverIrqS_6();
+extern void DriverIrqS_7();
+extern void DriverIrqS_8();
+extern void DriverIrqS_9();
+
 extern void HandlerIRQ0();
 extern void HandlerIRQ1();
 extern void HandlerIRQ2();
@@ -65,347 +71,22 @@ extern void HandlerIVT71();
 extern void HandlerIVT72();
 extern void HandlerSpurious();
 
-void CHandlerIVT72(void)
-{
-    asm volatile ("cli\nhlt" :: "a"(0x1234));
-    ApicEOI();
-}
-
-void CHandlerIVT71(void)
-{
-    asm volatile ("cli\nhlt" :: "a"(0x4231));
-    ApicEOI();
-}
-
 void PageFault(void)
 {
-
+    KernelPanic("PANIC: Page Fault!");
 }
 
 void GeneralProtectionFault(void)
 {
-
+    KernelPanic("PANIC: GP Fault!");
 }
 
 void UnknownFault(void)
 {
-    asm volatile ("cli\nhlt" :: "a"(0x4232));
+    KernelPanic("PANIC: Unknown Fault!");
 }
 
-int Int70Fired;
-void CHandlerIVT70(void)
-{
-    Int70Fired = 1;
-    ApicEOI();
-}
-
-uint32_t TransformCol(uint32_t Col)
-{
-    VesaVbeModeInfo* VbeModeInfo = VBE_INFO_LOC;
-    uint32_t Blue = Col & 0xFF;
-    uint32_t Green = (Col & 0xFF00) >> 8;
-    uint32_t Red = (Col & 0xFF0000) >> 16;
-    return (Red << VbeModeInfo->RedPosition) | (Green << VbeModeInfo->GreenPosition) | (Blue << VbeModeInfo->BluePosition);
-}
-
-extern float MSTicks;
-
-extern int SchedRingIdx;
-extern SoftTSS* SchedRing;
-extern int SchedRingSize;
-
-void AddProcess(uint64_t ip, uint64_t size)
-{
-    if (SchedRing[SchedRingIdx].Privilege == 1)
-    {
-        if ((SchedRingSize % 16) == 15) 
-        {
-            SoftTSS* NewRing = (SoftTSS*)AllocVM(sizeof(SoftTSS) * (SchedRingSize / 16 * 16 + 16));
-            for (int i = 0;i < SchedRingSize;i++)
-            {
-                NewRing[i] = SchedRing[i];
-            }
-            FreeVM((uint64_t)SchedRing);
-            SchedRing = NewRing;
-        }
-
-        SchedRing[SchedRingSize].Privilege = (size & (uint64_t)0x100000000) >> 32;
-        SchedRing[SchedRingSize].cs = 0x20 | 3;
-        SchedRing[SchedRingSize].ds = 0x28 | 3;
-        SchedRing[SchedRingSize].rip = ip;
-        SchedRing[SchedRingSize].rsp = AllocVM(0x40000) + 0x40000;
-        SchedRing[SchedRingSize].StackStart = SchedRing[SchedRingSize].rsp - 0x40000;
-        SchedRing[SchedRingSize].rflags = 0x200;
-        SchedRing[SchedRingSize].SuspendIdx = 0;
-        SchedRing[SchedRingSize].Suspended = 0;
-        SchedRingSize++;
-    }
-}
-
-void ExitProcess()
-{
-    if (SchedRingSize == 0) return;
-
-    if (SchedRing[SchedRingIdx].SuspendIdx) SchedRing[SchedRing[SchedRingIdx].SuspendIdx - 1].Suspended = 0;
-
-    for (int i = 0;i < SchedRingSize;i++)
-    {
-        if (i == SchedRingIdx) continue;
-        if (SchedRing[i].SuspendIdx) if (SchedRing[i].SuspendIdx - 1 > SchedRingIdx) SchedRing[i].SuspendIdx--;
-    }
-
-    FreeVM(SchedRing[SchedRingIdx].StackStart);
-
-    for (int i = SchedRingIdx + 1;i < SchedRingSize;i++)
-    {
-        SchedRing[i - 1] = SchedRing[i];
-    }
-
-    SchedRingSize--;
-
-    SchedRingIdx = 0x7FFFFFFF;
-}
-
-extern char KeyQueue[KEY_QUEUE_SIZE];
-extern size_t KeyQueueIdx;
-extern int SuspendPIT;
-
-void _Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector)
-{
-    if (Code == 7)
-    {
-        FSMkdir((char*)rsi);
-    }
-    else if (Code == 8)
-    {
-        FSMkfile((char*)rsi);
-    }
-    else if (Code == 9)
-    {
-        FSRemove((char*)rsi);
-    }
-    else if (Code == 10)
-    {
-        FileRequest* Req = (FileRequest*)Selector;
-        FSWriteFile((char*)rsi, Req->Data, Req->Bytes);
-    }
-    else if (Code == 11)
-    {
-        FileResponse Response;
-        Response.Data = FSReadFile((char*)rsi, &Response.BytesRead);
-        *(FileResponse*)Selector = Response;
-    }
-    else if (Code == 12)
-    {
-        *(size_t*)Selector = FSFileSize((char*)rsi);
-    }
-    else if (Code == 13)
-    {
-        FileListResponse Response;
-        Response.Data = FSListFiles((char*)rsi, &Response.NumEntries);
-        *(FileListResponse*)Selector = Response;
-    }
-    ExitProcess();
-    while (1);
-}
-
-void _SyscallInline(uint64_t Code, uint64_t rsi, uint64_t Selector)
-{
-    if (Code == 0)
-    {
-        FreeVM(rsi);
-    }
-    else if (Code == 1)
-    {
-        *(void**)rsi = (void*)AllocVM(Selector);
-    }
-    else if (Code == 2)
-    {
-        AddProcess(rsi, Selector);
-    }
-    else if (Code == 4)
-    {
-        VesaVbeModeInfo* VbeModeInfo = VBE_INFO_LOC;
-
-        Draw_Packet* Packet = (Draw_Packet*)rsi;
-        for (int i = 0; i < Packet->pointsSize; i++)
-        {
-            Draw_PointEntry Entry = ((Draw_PointEntry*)Packet->points)[i];
-            if (Entry.x < 0) continue;
-            if (Entry.y < 0) continue;
-            if (Entry.x >= VbeModeInfo->Width) continue;
-            if (Entry.y >= VbeModeInfo->Height) continue;
-
-            Entry.col = TransformCol(Entry.col);
-
-            *(uint32_t*)(0xFFFFFFFF90000000 + (Entry.x + Entry.y * VbeModeInfo->Width) * 4) = Entry.col;
-        }
-        for (int i = 0; i < Packet->linesSize; i++)
-        {
-            Draw_LineEntry Entry = ((Draw_LineEntry*)Packet->lines)[i];
-
-            Entry.col = TransformCol(Entry.col);
-
-            float fx = Entry.x0;
-            float fy = Entry.y0;
-            for (;(int)fx != Entry.x1 || (int)fy != Entry.y1;fx += ((float)Entry.x1 - Entry.x0) / VbeModeInfo->Width,fy += ((float)Entry.y1 - Entry.y0) / VbeModeInfo->Width)
-            {
-                int x = fx;
-                int y = fy;
-                if (x < 0) continue;
-                if (y < 0) continue;
-                if (x >= VbeModeInfo->Width) continue;
-                if (y >= VbeModeInfo->Height) continue;
-                *(uint32_t*)(0xFFFFFFFF90000000 + (x + y * VbeModeInfo->Width) * 4) = Entry.col;
-            }
-        }
-        for (int i = 0; i < Packet->textsSize; i++)
-        {
-            Draw_TextEntry Entry = ((Draw_TextEntry*)Packet->texts)[i];
-
-            Entry.col = TransformCol(Entry.col);
-
-            for (int i = 0;Entry.text[i];i++)
-            {
-                uint8_t* ValP = SysFont[Entry.text[i]];
-                for (int iy = 0;iy < 8;iy++)
-                {
-                    uint8_t ValY = ValP[iy];
-                    for (int ix = 0;ix < 8;ix++)
-                    {
-                        int x = ix + i * 0x8 + Entry.x;
-                        int y = iy + Entry.y;
-                        uint8_t Val = (ValY >> ix) & 1;
-                        if (!Val) 
-                        {
-                            *(uint32_t*)(0xFFFFFFFF90000000 + (x + y * VbeModeInfo->Width) * 4) = 0;
-                            continue;
-                        }
-                        if (x < 0) continue;
-                        if (y < 0) continue;
-                        if (x >= VbeModeInfo->Width) continue;
-                        if (y >= VbeModeInfo->Height) continue;
-                        *(uint32_t*)(0xFFFFFFFF90000000 + (x + y * VbeModeInfo->Width) * 4) = Entry.col;
-                    }
-                }
-            }
-        }
-        for (int i = 0; i < Packet->rectsSize; i++)
-        {
-            Draw_RectEntry Entry = ((Draw_RectEntry*)Packet->rects)[i];
-            
-            Entry.col = TransformCol(Entry.col);
-
-            for (int y = Entry.y;y < Entry.y + Entry.h;y++)
-            {
-                if (y < 0) continue;
-                if (y >= VbeModeInfo->Height) continue;
-                for (int x = Entry.x;x < Entry.x + Entry.w;x++)
-                {
-                    if (x < 0) continue;
-                    if (x >= VbeModeInfo->Width) continue;
-                    *(uint32_t*)(0xFFFFFFFF90000000 + (x + y * VbeModeInfo->Width) * 4) = Entry.col;
-                }
-            }
-        }
-        for (int i = 0; i < Packet->imagesSize; i++)
-        {
-            Draw_ImageEntry Entry = ((Draw_ImageEntry*)Packet->images)[i];
-
-            for (int y = Entry.y;y < Entry.y + Entry.h;y++)
-            {
-                if (y < 0) continue;
-                if (y >= VbeModeInfo->Height) continue;
-                for (int x = Entry.x;x < Entry.x + Entry.w;x++)
-                {
-                    if (x < 0) continue;
-                    if (x >= VbeModeInfo->Width) continue;
-                    *(uint32_t*)(0xFFFFFFFF90000000 + (x + y * VbeModeInfo->Width) * 4) = TransformCol(Entry.image[(x - Entry.x) + (y - Entry.y) * Entry.w]);
-                }
-            }
-        }
-    }
-    else if (Code == 5)
-    {
-        *(float*)rsi = MSTicks;
-    }
-    else if (Code == 6)
-    {
-        *(char*)rsi = KeyQueueIdx > 0 ? KeyQueue[--KeyQueueIdx] : 0;
-    }
-}
-
-void AddSchedHandlerProcess(uint64_t Code, uint64_t rsi, uint64_t Selector)
-{
-    if ((SchedRingSize % 128) == 127) 
-    {
-        SoftTSS* NewRing = (SoftTSS*)AllocVM(sizeof(SoftTSS) * (SchedRingSize / 128 * 128 + 128));
-        for (int i = 0;i < SchedRingSize;i++)
-        {
-            NewRing[i] = SchedRing[i];
-        }
-        FreeVM((uint64_t)SchedRing);
-        SchedRing = NewRing;
-    }
-
-    SchedRing[SchedRingSize].Privilege = 1;
-    SchedRing[SchedRingSize].cs = 0x18;
-    SchedRing[SchedRingSize].ds = 0x10;
-    SchedRing[SchedRingSize].rsi = rsi;
-    SchedRing[SchedRingSize].rdi = Code;
-    SchedRing[SchedRingSize].rdx = Selector;
-    SchedRing[SchedRingSize].rip = _Syscall;
-    SchedRing[SchedRingSize].rsp = AllocVM(0x40000) + 0x40000;
-    SchedRing[SchedRingSize].StackStart = SchedRing[SchedRingSize].rsp - 0x40000;
-    SchedRing[SchedRingSize].rflags = 0x200;
-    SchedRing[SchedRingSize].SuspendIdx = SchedRingIdx + 1;
-    SchedRing[SchedRingSize].Suspended = 0;
-    SchedRing[SchedRingIdx].Suspended = 1;
-    SchedRingSize++;
-}
-
-uint64_t Syscall(uint64_t Code, uint64_t rsi, uint64_t Selector, SoftTSS* SaveState)
-{
-    if (Code == 3)
-    {
-        ExitProcess();
-        SchedRingIdx = 0;
-        return SchedRing + SchedRingIdx;
-    }
-
-    if (Code < 7)
-    {
-        _SyscallInline(Code, rsi, Selector);
-        return 0;
-    }
-
-    uint64_t Priv = SchedRing[SchedRingIdx].Privilege;
-    uint64_t StackStart = SchedRing[SchedRingIdx].StackStart;
-    uint64_t Suspended = SchedRing[SchedRingIdx].Suspended;
-    uint64_t SuspendIdx = SchedRing[SchedRingIdx].SuspendIdx;
-    SchedRing[SchedRingIdx] = *SaveState;
-    SchedRing[SchedRingIdx].Privilege = Priv;
-    SchedRing[SchedRingIdx].StackStart = StackStart;
-    SchedRing[SchedRingIdx].Suspended = Suspended;
-    SchedRing[SchedRingIdx].SuspendIdx = SuspendIdx;
-
-    AddSchedHandlerProcess(Code, rsi, Selector);
-
-    SchedRingIdx++;
-    if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
-
-    while (SchedRing[SchedRingIdx].Suspended)
-    {
-        SchedRingIdx++;
-        if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
-    }
-
-    return SchedRing + SchedRingIdx;
-}
-
-/* Now init */
-
-void IdtInit()
+void IDT_Init()
 {
     IDTEntries = 0xFFFFFFFFC1300000;
     static void (*Handlers[16])() = {
@@ -413,6 +94,18 @@ void IdtInit()
         HandlerIRQ4,  HandlerIRQ5,  HandlerIRQ6,  HandlerIRQ7,
         HandlerIRQ8,  HandlerIRQ9,  HandlerIRQ10, HandlerIRQ11,
         HandlerIRQ12, HandlerIRQ13, HandlerIRQ14, HandlerIRQ15,
+    };
+    static void (*DriverHandlers[16])() = {
+        DriverIrqS_0,  
+        DriverIrqS_1,  
+        DriverIrqS_2,  
+        DriverIrqS_3,
+        DriverIrqS_4,  
+        DriverIrqS_5,  
+        DriverIrqS_6,  
+        DriverIrqS_7,
+        DriverIrqS_8,  
+        DriverIrqS_9
     };
     for (int i = 0;i < 256;i++)
     {
@@ -457,28 +150,12 @@ void IdtInit()
             IDTEntries[i].offset_1 = (((uint64_t)Handlers[i - 32] & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
-        else if (i == 0x70) // For NVME
+        else if (i >= 0x70 && i < 0x80)
         {
             IDTEntries[i].type_attributes = 0x8E;
             IDTEntries[i].offset_3 = 0xFFFFFFFF;
-            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT70 & 0x00000000FFFF0000ULL) >> 16);
-            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT70 & 0x000000000000FFFFULL) >> 0);
-            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
-        }
-        else if (i == 0x71) // For USB
-        {
-            IDTEntries[i].type_attributes = 0x8E;
-            IDTEntries[i].offset_3 = 0xFFFFFFFF;
-            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT71 & 0x00000000FFFF0000ULL) >> 16);
-            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT71 & 0x000000000000FFFFULL) >> 0);
-            IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
-        }
-        else if (i == 0x72) // For HPET
-        {
-            IDTEntries[i].type_attributes = 0x8E;
-            IDTEntries[i].offset_3 = 0xFFFFFFFF;
-            IDTEntries[i].offset_2 = (((uint64_t)HandlerIVT72 & 0x00000000FFFF0000ULL) >> 16);
-            IDTEntries[i].offset_1 = (((uint64_t)HandlerIVT72 & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].offset_2 = (((uint64_t)DriverHandlers[i] & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)DriverHandlers[i] & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
         else if (i == 0x80)

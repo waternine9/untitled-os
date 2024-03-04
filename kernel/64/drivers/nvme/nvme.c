@@ -4,6 +4,7 @@
 #include "../../idt.h"
 #include "../../io.h"
 #include "../../apic.h"
+#include "../../panic.h"
 
 #define NVME_CAP 0x0
 #define NVME_CSTS 0x1C
@@ -23,10 +24,9 @@
 #define NVME_OPCODE_READ 0x2
 
 #define NVME_QUEUE_ENTRIES_SIZE 64
-
 #define NVME_STATUS_RING_SIZE 128
 
-static char Dec2Hexa[16] = { '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+static int CommandCompleted;
 
 typedef struct
 {
@@ -86,7 +86,7 @@ static int NVMe_ControllerCount;
 
 extern float MSTicks;
 
-uint64_t ForceAlign(uint64_t _Ptr, uint64_t _Boundary)
+static uint64_t ForceAlign(uint64_t _Ptr, uint64_t _Boundary)
 {
     return (_Ptr - (_Ptr % _Boundary)) + _Boundary;
 }
@@ -96,21 +96,21 @@ static uint8_t* NVMe_MetadataPtr;
 extern int Int70Fired;
 extern int SuspendPIT;
 
-void SendCommand(NVME_Controller* Controller, NVME_Command Cmd)
+static void SendCommand(NVME_Controller* Controller, NVME_Command Cmd)
 {
     Cmd.MetadataPtr = NVMe_MetadataPtr;
 
     // Add a new command
     Controller->AdminSubmission[Controller->Tail] = Cmd;
     Controller->Tail = (Controller->Tail + 1) % Controller->NumEntries;
-    Int70Fired = 0;
+    CommandCompleted = 0;
     *(uint32_t*)(Controller->vBar0 + 0x1000) = Controller->Tail;
     int Timeout = 20000;
     while (Timeout--) IO_Wait();
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Controller->DoorbellStride) = Controller->Tail;
 }
 
-void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* Pair, int Index)
+static void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* Pair, int Index)
 {
     SuspendPIT = 1;
     Cmd.MetadataPtr = NVMe_MetadataPtr;
@@ -118,14 +118,14 @@ void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* 
     // Add a new command
     Pair->Submission[Pair->Tail] = Cmd;
     Pair->Tail = (Pair->Tail + 1) % Pair->NumEntries;
-    Int70Fired = 0;
+    CommandCompleted = 0;
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride) = Pair->Tail;
     while (!Int70Fired) IO_In8(0x80);
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride + Controller->DoorbellStride) = Pair->Tail;
     SuspendPIT = 0;
 }
 
-void CreateIOPair(NVME_Controller* Controller)
+static void CreateIOPair(NVME_Controller* Controller)
 {
 
     NVME_IO_Pair Pair;
@@ -173,7 +173,7 @@ void CreateIOPair(NVME_Controller* Controller)
     Controller->IOPairCount++;
 }
 
-void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Dest)
+static void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Dest)
 {
     while (!Int70Fired) IO_Wait();
 
@@ -215,7 +215,7 @@ void ReadSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64
     FreeVM(Command.MetadataPtr);
 }
 
-void WriteSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Src)
+static void WriteSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint64_t Src)
 {
     while (!Int70Fired) IO_Wait();
     uint64_t* PRPList = ForceAlign(AllocPhys(0x1000 + Controller->PageSize), Controller->PageSize);
@@ -256,7 +256,55 @@ void WriteSectors(NVME_Controller* Controller, uint64_t LBA, uint32_t Num, uint6
     FreeVM(Command.MetadataPtr);
 }
 
-void CheckNVMe(pci_device_path Path)
+static void RefreshNamespaces(NVME_Controller* Controller)
+{
+    uint8_t IdenDataBuf[0x2000];
+    uint64_t IdenOut = ForceAlign(IdenDataBuf, Controller->PageSize);
+    NVME_Command Identify;
+    Identify.DWORD0 = 6;
+    Identify.Reserved = 0;
+    Identify.NSID = 0;
+    Identify.PRP0 = IdenOut;
+    Identify.PRP1 = 0;
+    Identify.CmdSpecific[0] = 2;
+    Identify.CmdSpecific[1] = 0;
+    Identify.CmdSpecific[2] = 0;
+    Identify.CmdSpecific[3] = 0;
+    Identify.CmdSpecific[4] = 0;
+    Identify.CmdSpecific[5] = 0;
+    SendCommand(Controller, Identify);
+
+    Controller->NSIDCount = 0;
+
+    for (int i = 0;i < 32;i++)
+    {
+        if (!((uint32_t*)IdenOut)[i]) continue;
+        Controller->NSIDs[Controller->NSIDCount++] = ((uint32_t*)IdenOut)[i];
+    }
+}
+
+static void GetNamespaceData(NVME_Controller* Controller, uint32_t NSID, uint64_t* MaxLBA)
+{
+    uint8_t IdenDataBuf[0x2000];
+    uint64_t IdenOut = ForceAlign(IdenDataBuf, Controller->PageSize);
+    NVME_Command Identify;
+    Identify.DWORD0 = 6;
+    Identify.Reserved = 0;
+    Identify.NSID = NSID;
+    Identify.PRP0 = IdenOut;
+    Identify.PRP1 = 0;
+    Identify.CmdSpecific[0] = 0;
+    Identify.CmdSpecific[1] = 0;
+    Identify.CmdSpecific[2] = 0;
+    Identify.CmdSpecific[3] = 0;
+    Identify.CmdSpecific[4] = 0;
+    Identify.CmdSpecific[5] = 0;
+    SendCommand(Controller, Identify);
+
+    *MaxLBA = *(uint64_t*)IdenOut;
+}
+
+static void CheckNVMe(pci_device_path Path, int UseIRQ)
 {
     pci_device_header Header = PCI_QueryDeviceHeader(Path);
     pci_device_specialty Specialty = PCI_QueryDeviceSpecialty(Header);
@@ -292,11 +340,11 @@ void CheckNVMe(pci_device_path Path)
                 AllocIdMap(msixTableBase0, 0x1000, MALLOC_READWRITE_BIT | MALLOC_CACHE_DISABLE_BIT | MALLOC_USER_SUPERVISOR_BIT);
                 msixTableBase[0].AddressLow = GetApicBase() & (~0xFULL);
                 msixTableBase[0].AddressHigh = 0;
-                msixTableBase[0].Data = 0x70;
+                msixTableBase[0].Data = UseIRQ;
                 msixTableBase[0].Mask = 0;
                 msixTableBase[1].AddressLow = GetApicBase() & (~0xFULL);
                 msixTableBase[1].AddressHigh = 0;
-                msixTableBase[1].Data = 0x70;
+                msixTableBase[1].Data = UseIRQ;
                 msixTableBase[1].Mask = 0;
                 AllocUnMap(msixTableBase0, 0x1000);
 
@@ -338,12 +386,9 @@ void CheckNVMe(pci_device_path Path)
         *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) &= ~(1ULL); // Reset the controller
         while ((*(volatile uint32_t*)(Controller.vBar0 + NVME_CSTS) & 1) == 1); // Wait until the controller is ready
         
-
         uint32_t Version = *(uint32_t*)(Controller.vBar0 + NVME_VS);
         uint8_t VersionMinor = (Version >> 8) & 0xFF;
         uint16_t VersionMajor = (Version >> 16) & 0xFFFF;
-
-        
 
         uint64_t CapCSS = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 37);
 
@@ -352,16 +397,7 @@ void CheckNVMe(pci_device_path Path)
         
         Controller.OrigPageSize = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 48) & 0xF;
         Controller.PageSize = 1 << (12 + Controller.OrigPageSize);
-        
-        // *(uint16_t*)(0xFFFFFFFF90000000) = 0x0F00 | (Dec2Hexa[Controller.PageSize % 16]);
-        // *(uint16_t*)(0xFFFFFFFF90000002) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 4) % 16]);
-        // *(uint16_t*)(0xFFFFFFFF90000004) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 8) % 16]);
-        // *(uint16_t*)(0xFFFFFFFF90000006) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 12) % 16]);
-        // *(uint16_t*)(0xFFFFFFFF90000008) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 16) % 16]);
-        // *(uint16_t*)(0xFFFFFFFF9000000a) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 20) % 16]);
-        // *(uint16_t*)(0xFFFFFFFF9000000c) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 24) % 16]);
-        // *(uint16_t*)(0xFFFFFFFF9000000e) = 0x0F00 | (Dec2Hexa[(Controller.PageSize >> 28) % 16]);
-        //asm volatile ("cli\nhlt");
+        if (Controller.PageSize != 0x1000) KernelPanic("PANIC: Invalid NVMe controller page size!");
 
         // Set round robin arbitration mechanism
         *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) &= ~(0b111UL << 11);
@@ -394,17 +430,6 @@ void CheckNVMe(pci_device_path Path)
         *(volatile uint32_t*)(Controller.vBar0 + NVME_CC) |= 1; // Enable the controller
         while ((*(volatile uint32_t*)(Controller.vBar0 + NVME_CSTS) & 1) == 0); // Wait until the controller is ready
 
-            /*
-            Controller.OrigPageSize = (*(uint64_t*)(Controller.vBar0 + NVME_CAP) >> 48) & 0b1111;
-            Controller.PageSize = 1 << (12 + Controller.OrigPageSize);
-            Controller.AdminSubmission = *(volatile uint64_t*)(Controller.vBar0 + NVME_ASQ) & (~0xFFFULL);
-            Controller.AdminSubmission = AllocVMAtPhys(Controller.AdminSubmission, 0x5000);
-            Controller.AdminCompletion = *(volatile uint64_t*)(Controller.vBar0 + NVME_ACQ) & (~0xFFFULL);
-            Controller.AdminCompletion = AllocVMAtPhys(Controller.AdminCompletion, 0x5000);
-            Controller.NumEntries = *(volatile uint32_t*)(Controller.vBar0 + NVME_AQA) & 0xFFFULL;
-            */
-
-
         Controller.Tail = 0;
         Controller.CompletionHead = 0;
         Controller.Phase = 1;
@@ -413,7 +438,8 @@ void CheckNVMe(pci_device_path Path)
         Controller.IOPairs = AllocVM(sizeof(NVME_IO_Pair) * 16);
         NVMe_Controllers[NVMe_ControllerCount] = Controller;
 
-        uint64_t IdenOut = ForceAlign(AllocPhys(0x4000 + Controller.PageSize), Controller.PageSize);
+        uint8_t IdenDataBuf[0x2000];
+        uint64_t IdenOut = ForceAlign(IdenDataBuf, Controller.PageSize);
         NVME_Command Identify;
         Identify.DWORD0 = 6;
         Identify.Reserved = 0;
@@ -428,51 +454,25 @@ void CheckNVMe(pci_device_path Path)
         Identify.CmdSpecific[5] = 0;
         SendCommand(&NVMe_Controllers[NVMe_ControllerCount], Identify);
        
-        // while (1)
-        //  {
-        //     if (*(uint16_t*)IdenOut == Header.VendorId)
-        //     {
-        //         *(uint32_t*)(0xFFFFFFFF90000000) = 0xFFF00FFF;
-        //         asm volatile ("cli\nhlt");
-        //     }
-        // }
-        // asm volatile ("cli\nhlt");
-
         if (*(uint8_t*)(IdenOut + 111) < 2) // either 0 or 1
         {
             NVMe_Controllers[NVMe_ControllerCount].IO = true;
 
             CreateIOPair(&NVMe_Controllers[NVMe_ControllerCount]);
         }
-
-        IdenOut = AllocPhys(0x4000);
-        Identify.DWORD0 = 6;
-        Identify.Reserved = 0;
-        Identify.NSID = 0;
-        Identify.PRP0 = IdenOut;
-        Identify.PRP1 = 0;
-        Identify.CmdSpecific[0] = 2;
-        Identify.CmdSpecific[1] = 0;
-        Identify.CmdSpecific[2] = 0;
-        Identify.CmdSpecific[3] = 0;
-        Identify.CmdSpecific[4] = 0;
-        Identify.CmdSpecific[5] = 0;
-        SendCommand(&NVMe_Controllers[NVMe_ControllerCount], Identify);
-
-
-
-        for (int i = 0;i < 32;i++)
+        else
         {
-            if (!((uint32_t*)IdenOut)[i]) continue;
-            NVMe_Controllers[NVMe_ControllerCount].NSIDs[NVMe_Controllers[NVMe_ControllerCount].NSIDCount++] = ((uint32_t*)IdenOut)[i];
+            KernelPanic("PANIC: NVMe controller not I/O compatible!");
         }
-        
+
+        RefreshNamespaces(&NVMe_Controllers[NVMe_ControllerCount]);
+
         NVMe_ControllerCount++;
     }
 }
 
 // Also initializes NVMe device
-void ScanForNVMe()
+static void ScanForNVMe(int UseIRQ)
 {
     for (int Bus = 0;Bus < 256;Bus++)
     {
@@ -489,26 +489,30 @@ void ScanForNVMe()
                 for (int Function = 1;Function < 8;Function++)
                 {
                     Path.Function = Function;
-                    CheckNVMe(Path);
+                    CheckNVMe(Path, UseIRQ);
                 }
             }
             else
             {
-                CheckNVMe(Path);
+                CheckNVMe(Path, UseIRQ);
             }
         }
     }
 }
 
-void NVMEInit()
+static void NVMEInit(int UseIRQ)
 {
     NVMe_MetadataPtr = AllocVM(4096);
     NVMe_ControllerCount = 0;
     NVMe_Controllers = AllocVM(sizeof(NVME_Controller) * 256);
-    ScanForNVMe();
+    ScanForNVMe(UseIRQ);
+    if (NVMe_ControllerCount > 1)
+    {
+        KernelPanic("PANIC: More than one NVMe controller found, only one is supported");
+    }
 }
 
-bool NVMERead(size_t Num, uint32_t LBA, void* Dest)
+static bool NVMERead(size_t Num, uint32_t LBA, void* Dest)
 {
     for (int j = 0;j < NVMe_ControllerCount;j++)
     {
@@ -519,7 +523,7 @@ bool NVMERead(size_t Num, uint32_t LBA, void* Dest)
     return false;
 }
 
-bool NVMEWrite(size_t Num, uint32_t LBA, void* Src)
+static bool NVMEWrite(size_t Num, uint32_t LBA, void* Src)
 {
     for (int j = 0;j < NVMe_ControllerCount;j++)
     {
@@ -528,4 +532,68 @@ bool NVMEWrite(size_t Num, uint32_t LBA, void* Src)
         return true;
     }
     return false;
+}
+
+static void NVME_Driver_IRQHandler()
+{
+    CommandCompleted = 1;
+}
+
+static void RefreshDriverDevices(DriverMan_StorageDriver* MyDriver)
+{
+    size_t TotalDeviceCount = 0;
+    for (int i = 0;i < NVMe_ControllerCount;i++)
+    {
+        TotalDeviceCount += NVMe_Controllers[i].NSIDCount;
+    }
+    MyDriver->NumDevices = TotalDeviceCount;
+    if (MyDriver->Devices) FreeVM(MyDriver->Devices);
+    MyDriver->Devices = AllocVM(sizeof(DriverMan_StorageDevice) * TotalDeviceCount);
+    int CurDeviceIdx = 0;
+    for (int i = 0;i < NVMe_ControllerCount;i++)
+    {
+        for (int j = 0; j < NVMe_Controllers[i].NSIDCount;j++)
+        {
+            uint32_t CurrentNSID = NVMe_Controllers[i].NSIDs[j];
+            
+            uint64_t NamespaceSize;
+            GetNamespaceData(&NVMe_Controllers[i], CurrentNSID, &NamespaceSize);
+            NamespaceSize *= NVMe_Controllers[i].PageSize;
+            MyDriver->Devices[CurDeviceIdx].Capacity = NamespaceSize;
+            MyDriver->Devices[CurDeviceIdx].MaxReadSectorCount = NamespaceSize / 512;
+            MyDriver->Devices[CurDeviceIdx].MaxWriteSectorCount = NamespaceSize / 512;
+            MyDriver->Devices[CurDeviceIdx].MyID = CurDeviceIdx;
+            MyDriver->Devices[CurDeviceIdx].MyUID = CurrentNSID;
+            MyDriver->Devices[CurDeviceIdx].ParentDriver = MyDriver;
+            CurDeviceIdx++;
+        }
+    }
+}
+
+static void NVME_Driver_Init(DriverMan_StorageDriver* MyDriver)
+{
+    CommandCompleted = 0;
+    NVMEInit(MyDriver->IRQ);
+    RefreshDriverDevices(MyDriver);
+}
+
+static void NVME_Driver_Run(DriverMan_StorageDriver* MyDriver)
+{
+    for (int i = 0;i < NVMe_ControllerCount;i++)
+    {
+        RefreshNamespaces(&NVMe_Controllers[i]);
+    }
+    RefreshDriverDevices(MyDriver);
+}
+
+DriverMan_StorageDriver* NVMe_GetDriver()
+{
+    DriverMan_StorageDriver* OutDriver = AllocVM(sizeof(DriverMan_StorageDriver));
+
+    OutDriver->Header.Name = "NVMe";
+    OutDriver->Header.Version = 0x00010000;
+    OutDriver->NeedsIRQ = 1;
+    OutDriver->DriverIRQ = NVME_Driver_IRQHandler;
+    OutDriver->DriverInit = NVME_Driver_Init;
+    OutDriver->DriverRun = NVME_Driver_Run;
 }

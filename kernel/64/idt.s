@@ -14,6 +14,7 @@ global PageFaultS
 global GeneralProtectionFaultS
 global TSSFaultS
 global UnknownFaultS
+global DriverIrqTable
 
 global HandlerIRQ0
 global HandlerIRQ1
@@ -27,13 +28,10 @@ global HandlerIRQ8
 global HandlerIRQ9
 global HandlerIRQ10 
 global HandlerIRQ11
-global HandlerIRQ12 
+global HandlerIRQ12
 global HandlerIRQ13 
 global HandlerIRQ14 
 global HandlerIRQ15
-global HandlerIVT70
-global HandlerIVT71
-global HandlerIVT72
 global HandlerSpurious
 
 extern CHandlerIRQ0
@@ -156,31 +154,30 @@ extern CHandlerIVT72
     mov rdi, [rdi + 32] ; I didn't forget you!
 %endmacro
 
+DriverIrqTable:
+    times 10 dq 0
+
+%macro DriverIrqS 1
+global DriverIrqS_%1
+DriverIrqS_%1:
+    cld
+    PUSHA64
+    call qword [DriverIrqTable + 8 * %1]
+    POPA64
+    iretq 
+%endmacro
+
 align 16
 
 PageFaultS:
     pop r12
     PUSHA64
-    mov eax, 0x77777777
-    mov ecx, 0x10000
-.loop:
-    mov dword [0xFFFFFFFF90000000 + ecx], eax 
-    loop .loop
-    cli
-    hlt
     call PageFault
     POPA64
     iretq
 
 GeneralProtectionFaultS:
     PUSHA64
-    mov eax, 0x22222222
-    mov ecx, 0x10000
-.loop:
-    mov dword [0xFFFFFFFF90000000 + ecx], eax 
-    loop .loop
-    cli
-    hlt
     call GeneralProtectionFault
     POPA64
     add rsp, 8
@@ -189,11 +186,6 @@ GeneralProtectionFaultS:
 UnknownFaultS:
     pop r12
     PUSHA64
-    mov word [0xFFFFFFFF90000000], 0x0F00 | 'U'
-    mov word [0xFFFFFFFF90000002], 0x0F00 | 'K'
-    mov eax, 0x1234567
-    cli
-    hlt
     call UnknownFault
     POPA64
     iretq
@@ -456,26 +448,16 @@ HandlerIRQ15:
     POPA64
     iretq
 
-HandlerIVT70:
-    cld
-    PUSHA64
-    call CHandlerIVT70
-    POPA64
-    iretq
-
-HandlerIVT71:
-    cld
-    PUSHA64
-    call CHandlerIVT71
-    POPA64
-    iretq
-
-HandlerIVT72:
-    cld
-    PUSHA64
-    call CHandlerIVT72
-    POPA64
-    iretq
+DriverIrqS 0
+DriverIrqS 1
+DriverIrqS 2
+DriverIrqS 3
+DriverIrqS 4
+DriverIrqS 5
+DriverIrqS 6
+DriverIrqS 7
+DriverIrqS 8
+DriverIrqS 9
 
 HandlerSpurious:
     iretq
