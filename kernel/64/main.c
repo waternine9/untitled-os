@@ -34,6 +34,9 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     {
         KernelPanic("PANIC: Failed to map framebuffer to virtual memory!");
     }
+
+    KernelPanic("Just a test.");
+
     AllocIdMap(0xB00000, 0x100000, (1ULL << MALLOC_READWRITE_BIT) | (1ULL << MALLOC_USER_SUPERVISOR_BIT));
     Draw_Init(FRAMEBUFFER_VM);
 

@@ -3,8 +3,8 @@
 
 #include "../include.h"
 
-#define KernelPanic(Msg) _KernelPanic(__LINE__, __FILE__, Msg)
+#define KernelPanic(...) _KernelPanic(__LINE__, __FILE__, __VA_ARGS__)
 
-void _KernelPanic(int Line, const char* File, const char* Message);
+void _KernelPanic(int Line, const char* File, const char* Message, ...);
 
 #endif // PANIC_H
