@@ -4,6 +4,6 @@
 #include "../../../include.h"
 #include "../driverman.h"
 
-void IDE_GetDriver();
+// Deprecated, no support
 
 #endif // IDE_H

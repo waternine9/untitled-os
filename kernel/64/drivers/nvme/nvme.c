@@ -96,7 +96,7 @@ static uint8_t* NVMe_MetadataPtr;
 extern int Int70Fired;
 extern int SuspendPIT;
 
-static void SendCommand(NVME_Controller* Controller, NVME_Command Cmd)
+static bool SendCommand(NVME_Controller* Controller, NVME_Command Cmd)
 {
     Cmd.MetadataPtr = NVMe_MetadataPtr;
 
@@ -110,11 +110,10 @@ static void SendCommand(NVME_Controller* Controller, NVME_Command Cmd)
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Controller->DoorbellStride) = Controller->Tail;
 }
 
-static void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* Pair, int Index)
+static bool SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO_Pair* Pair, int Index)
 {
     SuspendPIT = 1;
     Cmd.MetadataPtr = NVMe_MetadataPtr;
-
     // Add a new command
     Pair->Submission[Pair->Tail] = Cmd;
     Pair->Tail = (Pair->Tail + 1) % Pair->NumEntries;
@@ -123,6 +122,11 @@ static void SendIOCommand(NVME_Controller* Controller, NVME_Command Cmd, NVME_IO
     while (!Int70Fired) IO_In8(0x80);
     *(uint32_t*)(Controller->vBar0 + 0x1000 + Index * 2 * Controller->DoorbellStride + Controller->DoorbellStride) = Pair->Tail;
     SuspendPIT = 0;
+    
+    uint8_t StatusCode = Pair->Completion[Pair->CompletionHead] << 49;
+    Pair->CompletionHead = (Pair->CompletionHead + 1) % Pair->NumEntries;
+
+    return StatusCode == 0;
 }
 
 static void CreateIOPair(NVME_Controller* Controller)
@@ -512,26 +516,16 @@ static void NVMEInit(int UseIRQ)
     }
 }
 
-static bool NVMERead(size_t Num, uint32_t LBA, void* Dest)
+static bool NVMERead(uint32_t NSID, size_t Num, uint32_t LBA, void* Dest)
 {
-    for (int j = 0;j < NVMe_ControllerCount;j++)
-    {
-        if (!NVMe_Controllers[j].IO) continue;
-        ReadSectors(&NVMe_Controllers[j], LBA, Num, Dest);
-        return true;
-    }
-    return false;
+    ReadSectors(&NVMe_Controllers[0], NSID, LBA, Num, Dest);
+    return true;
 }
 
-static bool NVMEWrite(size_t Num, uint32_t LBA, void* Src)
+static bool NVMEWrite(uint32_t NSID, size_t Num, uint32_t LBA, void* Src)
 {
-    for (int j = 0;j < NVMe_ControllerCount;j++)
-    {
-        if (!NVMe_Controllers[j].IO) continue;
-        WriteSectors(&NVMe_Controllers[j], LBA, Num, Src);
-        return true;
-    }
-    return false;
+    WriteSectors(&NVMe_Controllers[0], NSID, LBA, Num, Src);
+    return true;
 }
 
 static void NVME_Driver_IRQHandler()
@@ -586,6 +580,16 @@ static void NVME_Driver_Run(DriverMan_StorageDriver* MyDriver)
     RefreshDriverDevices(MyDriver);
 }
 
+static bool NVME_Driver_Read(DriverMan_StorageDriver* MyDriver, int DeviceIdx, size_t NumSectors, uint32_t LBA, void* Dest)
+{
+    return NVMERead(MyDriver->Devices[DeviceIdx].MyUID, NumSectors, LBA, Dest);
+}
+
+static bool NVME_Driver_Write(DriverMan_StorageDriver* MyDriver, int DeviceIdx, size_t NumSectors, uint32_t LBA, void* Src)
+{
+    return NVMEWrite(MyDriver->Devices[DeviceIdx].MyUID, NumSectors, LBA, Src);
+}
+
 DriverMan_StorageDriver* NVMe_GetDriver()
 {
     DriverMan_StorageDriver* OutDriver = AllocVM(sizeof(DriverMan_StorageDriver));
@@ -596,4 +600,5 @@ DriverMan_StorageDriver* NVMe_GetDriver()
     OutDriver->DriverIRQ = NVME_Driver_IRQHandler;
     OutDriver->DriverInit = NVME_Driver_Init;
     OutDriver->DriverRun = NVME_Driver_Run;
+    OutDriver->StorageRead = NVME_Driver_Read;
 }

@@ -1,5 +1,5 @@
 #include "fs.h"
-#include "../nvme/nvme.h"
+#include "../driverman.h"
 #include "../../vmalloc.h"
 
 #define FS_DIRFLAG_SHIFT 0
@@ -22,6 +22,11 @@
 #define FS_ENTRY_MYBLOCK_SHIFT 1ULL
 #define FS_ENTRY_MYBLOCK_MASK 0xFFFFFFFFULL
 
+static void FS_DriveRead(size_t Num, size_t LBA, void* Dest)
+{
+	
+}
+
 typedef struct
 {
 	bool IsDir;
@@ -31,13 +36,13 @@ typedef struct
 	uint32_t DataLBA;
 } FSBlockHeader;
 
-const char* FSSignature = "FMT_THEOS"; // 9 letters
-const char* FSRootName = "root"; // 9 letters
+static const char* FSSignature = "FMT_THEOS"; // 9 letters
+static const char* FSRootName = "root"; // 9 letters
 
-bool FSIsFormatted()
+static bool FSIsFormatted()
 {
 	char* FirstData = AllocPhys(0x1000);
-	NVMERead(1, 0, FirstData);
+	FS_DriveRead(1, 0, FirstData);
 	for (int i = 0;i < 9;i++)
 	{
 		if (FirstData[i] != FSSignature[i]) 
@@ -50,7 +55,7 @@ bool FSIsFormatted()
 	return true;
 }
 
-void FSFormat()
+static void FSFormat()
 {
 	char* FirstData = AllocPhys(0x1000);
 	for (int i = 0;i < 4096;i++)
@@ -61,14 +66,14 @@ void FSFormat()
 	{
 		FirstData[i] = FSSignature[i];
 	}
-	NVMEWrite(1, 0, FirstData);
+	FS_DriveWrite(1, 0, FirstData);
 	for (int i = 0;i < 4096;i++)
 	{
 		FirstData[i] = 0;
 	}
 	for (int i = 2;i < 0x1000;i += 8)
 	{
-		NVMEWrite(8, i, FirstData);
+		FS_DriveWrite(8, i, FirstData);
 	}
 	for (int i = 256;i < 256 + 4;i++)
 	{
@@ -76,10 +81,10 @@ void FSFormat()
 	}
  	*(uint64_t*)FirstData |= FS_DIRFLAG_ISDIR << FS_DIRFLAG_SHIFT;
 	*(uint64_t*)FirstData |= FS_VALID_ISVALID << FS_VALID_SHIFT;
-	NVMEWrite(2, 4, FirstData);
+	FS_DriveWrite(2, 4, FirstData);
 }
 
-void FSTryFormat()
+static void FSTryFormat()
 {
 	if (!FSIsFormatted())
 	{
@@ -87,10 +92,10 @@ void FSTryFormat()
 	}
 }
 
-FSBlockHeader FSQueryHeader(int Block)
+static FSBlockHeader FSQueryHeader(int Block)
 {
 	uint64_t* FirstData = AllocPhys(0x1000);
-	NVMERead(1, 4 + Block * 2, FirstData);
+	FS_DriveRead(1, 4 + Block * 2, FirstData);
 	FSBlockHeader Header;
 	Header.IsDir = (*FirstData >> FS_DIRFLAG_SHIFT) & FS_DIRFLAG_MASK;
 	Header.NextBlock = (*FirstData >> FS_NEXTBLOCK_SHIFT) & FS_NEXTBLOCK_MASK;
@@ -113,18 +118,18 @@ FSBlockHeader FSQueryHeader(int Block)
 	return Header;
 }
 
-void FSFormatBlock(uint64_t Block)
+static void FSFormatBlock(uint64_t Block)
 {
 	char* FirstData = AllocVM(0x1000);
 	for (int i = 0;i < 0x1000;i++)
 	{
 		FirstData[i] = 0;
 	}
-	NVMEWrite(2, 4 + Block * 2, FirstData);
+	FS_DriveWrite(2, 4 + Block * 2, FirstData);
 	FreeVM(FirstData);
 }
 
-void FSSetHeader(int Block, FSBlockHeader Header)
+static void FSSetHeader(int Block, FSBlockHeader Header)
 {
 	uint8_t* FirstData = AllocPhys(512);
 	for (int i = 0;i < 512;i++)
@@ -147,10 +152,10 @@ void FSSetHeader(int Block, FSBlockHeader Header)
 			FirstData[i + 256] = Header.Name[i];
 		}
 	}
-	NVMEWrite(1, 4 + Block * 2, FirstData);
+	FS_DriveWrite(1, 4 + Block * 2, FirstData);
 }
 
-bool FSStrcmp(char* x, char* y)
+static bool FSStrcmp(char* x, char* y)
 {
 	int xlen = 0, ylen = 0;
 	while (x[xlen]) xlen++;
@@ -165,11 +170,11 @@ bool FSStrcmp(char* x, char* y)
 	return true;
 }
 
-uint64_t FSGetDirInDir(uint64_t Block, char* Name)
+static uint64_t FSGetDirInDir(uint64_t Block, char* Name)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
@@ -197,11 +202,11 @@ uint64_t FSGetDirInDir(uint64_t Block, char* Name)
 	return 0;
 }
 
-uint64_t FSGetAnyInDir(uint64_t Block, char* Name)
+static uint64_t FSGetAnyInDir(uint64_t Block, char* Name)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
@@ -230,11 +235,11 @@ uint64_t FSGetAnyInDir(uint64_t Block, char* Name)
 	return 0;
 }
 
-uint64_t FSGetFileInDir(uint64_t Block, char* Name)
+static uint64_t FSGetFileInDir(uint64_t Block, char* Name)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
@@ -268,7 +273,7 @@ uint64_t FSGetFileInDir(uint64_t Block, char* Name)
 	return 0;
 }
 
-uint64_t FSAllocBlock()
+static uint64_t FSAllocBlock()
 {
 	for (uint64_t i = 4;i < 0xFFFFFFFFULL;i += 2)
 	{
@@ -281,11 +286,11 @@ uint64_t FSAllocBlock()
 	return 0;
 }
 
-void FSMkdirAt(uint64_t Block, char* Name)
+static void FSMkdirAt(uint64_t Block, char* Name)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
 		if (((Entries[i] >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK) == 0)
@@ -295,7 +300,7 @@ void FSMkdirAt(uint64_t Block, char* Name)
 			if (Block == 0) return;
 			FSFormatBlock(Block);
 			Entries[i] |= Block << FS_ENTRY_MYBLOCK_SHIFT;
-			NVMEWrite(1, CurHeader.DataLBA, Entries);
+			FS_DriveWrite(1, CurHeader.DataLBA, Entries);
 			FSBlockHeader Header;
 			Header.Name = Name;
 			Header.IsDir = true;
@@ -328,15 +333,15 @@ void FSMkdirAt(uint64_t Block, char* Name)
 		FSMkdirAt(NewBlock, Name);
 		Entries[256 / 8 - 1] |= 1ULL << FS_ENTRY_VALID_SHIFT;
 		Entries[256 / 8 - 1] |= NewBlock << FS_ENTRY_MYBLOCK_SHIFT;
-		NVMEWrite(1, CurHeader.DataLBA, Entries);
+		FS_DriveWrite(1, CurHeader.DataLBA, Entries);
 	}
 }
 
-void FSMkfileAt(uint64_t Block, char* Name)
+static void FSMkfileAt(uint64_t Block, char* Name)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
 		if (((Entries[i] >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK) == 0)
@@ -346,7 +351,7 @@ void FSMkfileAt(uint64_t Block, char* Name)
 			if (Block == 0) return;
 			FSFormatBlock(Block);
 			Entries[i] |= Block << FS_ENTRY_MYBLOCK_SHIFT;
-			NVMEWrite(1, CurHeader.DataLBA, Entries);
+			FS_DriveWrite(1, CurHeader.DataLBA, Entries);
 			FSBlockHeader Header;
 			Header.Name = Name;
 			Header.IsDir = false;
@@ -379,11 +384,11 @@ void FSMkfileAt(uint64_t Block, char* Name)
 		FSMkfileAt(NewBlock, Name);
 		Entries[256 / 8 - 1] |= 1ULL << FS_ENTRY_VALID_SHIFT;
 		Entries[256 / 8 - 1] |= NewBlock << FS_ENTRY_MYBLOCK_SHIFT;
-		NVMEWrite(1, CurHeader.DataLBA, Entries);
+		FS_DriveWrite(1, CurHeader.DataLBA, Entries);
 	}
 }
 
-void FSRemoveAtCleanUpFile(uint64_t Block)
+static void FSRemoveAtCleanUpFile(uint64_t Block)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (!CurHeader.Valid) return;
@@ -401,12 +406,12 @@ void FSRemoveAtCleanUpFile(uint64_t Block)
 	if (CurHeader.Name) FreeVM(CurHeader.Name);
 }
 
-void FSRemoveAtCleanUp(uint64_t Block)
+static void FSRemoveAtCleanUp(uint64_t Block)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (CurHeader.Name) FreeVM(CurHeader.Name);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
 		if ((Entries[i] >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK)
@@ -431,15 +436,15 @@ void FSRemoveAtCleanUp(uint64_t Block)
 		FSRemoveAtCleanUp((NextBlock >> FS_ENTRY_MYBLOCK_SHIFT) & FS_ENTRY_MYBLOCK_MASK);
 	}
 
-	NVMEWrite(1, CurHeader.DataLBA, Entries);
+	FS_DriveWrite(1, CurHeader.DataLBA, Entries);
 	FreeVM(Entries);
 }
 
-void FSRemoveAt(uint64_t Block, char* Name)
+static void FSRemoveAt(uint64_t Block, char* Name)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 	for (int i = 0; i < 256 / 8 - 1;i++)
 	{
 		if ((Entries[i] >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK)
@@ -452,7 +457,7 @@ void FSRemoveAt(uint64_t Block, char* Name)
 				Entries[i] &= ~(1ULL << FS_ENTRY_VALID_SHIFT);
 				if (Header.Name) FreeVM(Header.Name);
 				if (CurHeader.Name) FreeVM(CurHeader.Name);
-				NVMEWrite(1, CurHeader.DataLBA, Entries);
+				FS_DriveWrite(1, CurHeader.DataLBA, Entries);
 				if (Header.Name) FreeVM(Header.Name);
 				return;
 			}
@@ -466,7 +471,7 @@ void FSRemoveAt(uint64_t Block, char* Name)
 	if ((NextBlock >> FS_ENTRY_VALID_SHIFT) & FS_ENTRY_VALID_MASK) FSRemoveAt((NextBlock >> FS_ENTRY_MYBLOCK_SHIFT) & FS_ENTRY_MYBLOCK_MASK, Name);
 }
 
-void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Sectors)
+static void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Sectors)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (CurHeader.Name) FreeVM(CurHeader.Name);
@@ -475,7 +480,7 @@ void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Sectors)
 	if (Sectors == 0) return;
 	while (true)
 	{
-		NVMEWrite(1, CurHeader.DataLBA, Data);
+		FS_DriveWrite(1, CurHeader.DataLBA, Data);
 		Sectors--;
 		if (Sectors == 0) break;
 		
@@ -501,7 +506,7 @@ void FSWriteFileAt(uint64_t Block, char* Name, void* Data, size_t Sectors)
 }
 
 
-size_t FSReadFileAt(uint64_t Block, void* Data, size_t Sectors)
+static size_t FSReadFileAt(uint64_t Block, void* Data, size_t Sectors)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (CurHeader.Name) FreeVM(CurHeader.Name);
@@ -514,7 +519,7 @@ size_t FSReadFileAt(uint64_t Block, void* Data, size_t Sectors)
 	{
 		ReadBytes += 512;
 		i++;
-		NVMERead(1, CurHeader.DataLBA, Data);
+		FS_DriveRead(1, CurHeader.DataLBA, Data);
 		Sectors--;
 		if (Sectors == 0) break;
 		
@@ -529,7 +534,7 @@ size_t FSReadFileAt(uint64_t Block, void* Data, size_t Sectors)
 	return ReadBytes;
 }
 
-size_t FSFileSizeAt(uint64_t Block)
+static size_t FSFileSizeAt(uint64_t Block)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (CurHeader.Name) FreeVM(CurHeader.Name);
@@ -546,12 +551,12 @@ size_t FSFileSizeAt(uint64_t Block)
 	return OutBytes;
 }
 
-size_t FSDirectorySizeAt(uint64_t Block)
+static size_t FSDirectorySizeAt(uint64_t Block)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (!CurHeader.Valid) return 0;
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 	size_t NumEntries = 0;
 	for (int i = 0;i < 256 / 8 - 1;i++)
 	{
@@ -565,12 +570,12 @@ size_t FSDirectorySizeAt(uint64_t Block)
 	return NumEntries;
 }
 
-void FSListFilesAt(uint64_t Block, FileListEntry* List)
+static void FSListFilesAt(uint64_t Block, FileListEntry* List)
 {
 	FSBlockHeader CurHeader = FSQueryHeader(Block);
 	if (!CurHeader.Valid) return;
 	uint64_t* Entries = AllocPhys(512);
-	NVMERead(1, CurHeader.DataLBA, Entries);
+	FS_DriveRead(1, CurHeader.DataLBA, Entries);
 	size_t NumEntries = 0;
 	for (int i = 0;i < 256 / 8 - 1;i++)
 	{
@@ -592,7 +597,7 @@ void FSListFilesAt(uint64_t Block, FileListEntry* List)
 	if (CurHeader.Name) FreeVM(CurHeader.Name);
 }
 
-bool FSMkdir(char* Dir)
+static bool FSMkdir(char* Dir)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -646,7 +651,7 @@ bool FSMkdir(char* Dir)
 	}
 }
 
-bool FSMkfile(char* File)
+static bool FSMkfile(char* File)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -700,7 +705,7 @@ bool FSMkfile(char* File)
 	}
 }
 
-bool FSRemove(char* Any)
+static bool FSRemove(char* Any)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -751,7 +756,7 @@ bool FSRemove(char* Any)
 		i++;
 	}
 }
-bool FSWriteFile(char* File, void* Data, size_t Bytes)
+static bool FSWriteFile(char* File, void* Data, size_t Bytes)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -805,7 +810,7 @@ bool FSWriteFile(char* File, void* Data, size_t Bytes)
 	}
 }
 
-void* FSReadFile(char* File, size_t* BytesRead)
+static void* FSReadFile(char* File, size_t* BytesRead)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -860,7 +865,7 @@ void* FSReadFile(char* File, size_t* BytesRead)
 	}
 }
 
-size_t FSFileSize(char* File)
+static size_t FSFileSize(char* File)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)
@@ -912,7 +917,7 @@ size_t FSFileSize(char* File)
 	}
 }
 
-FileListEntry* FSListFiles(char* Dir, size_t* NumEntries)
+static FileListEntry* FSListFiles(char* Dir, size_t* NumEntries)
 {
 	char TempBuf[256];
 	for (int i = 0;i < 256;i++)

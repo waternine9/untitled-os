@@ -11,12 +11,7 @@
 #include "../vbe.h"
 #include "pci.h"
 
-// DRIVER INCLUDES
-#include "drivers/ps2/ps2.h"
-#include "drivers/fs/fs.h"
-#include "drivers/ide/ide.h"
-#include "drivers/nvme/nvme.h"
-#include "drivers/usb/xhci.h"
+#include "drivers/driverman.h"
 
 #define FRAMEBUFFER_VM 0xFFFFFFFF90000000
 
@@ -41,8 +36,9 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
         KernelPanic("PANIC: Failed to map framebuffer to virtual memory!");
     }
     AllocIdMap(0xB00000, 0x100000, (1ULL << MALLOC_READWRITE_BIT) | (1ULL << MALLOC_USER_SUPERVISOR_BIT));
-
     Draw_Init(FRAMEBUFFER_VM);
+
+    DriverMan_Init();
 
     ACPIInit();
     PicInit();
@@ -53,11 +49,11 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     LoadIDT();
     ApicInit();
 
-    FSTryFormat();
-    FSMkdir("home");
-    FSMkdir("bin");
-    FSMkdir("etc");
-    FSMkdir("sys");
+    // FSTryFormat();
+    // FSMkdir("home");
+    // FSMkdir("bin");
+    // FSMkdir("etc");
+    // FSMkdir("sys");
 
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) KernelPanic("PANIC: Failed to allocate OS stack!");
     

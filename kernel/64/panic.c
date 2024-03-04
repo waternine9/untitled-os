@@ -2,7 +2,7 @@
 #include "../vbe.h"
 #include "draw.h"
 
-void KernelPanic(const char* Message)
+void _KernelPanic(int Line, const char* File, const char* Message)
 {
     Draw_RectEntry Rect;
     Rect.x = 0;
@@ -16,6 +16,10 @@ void KernelPanic(const char* Message)
     Text.x = 10;
     Text.y = 10;
     Text.text = Message;
+    Draw_Text(Text);
+    Text.x = 10;
+    Text.y = 20;
+    Text.text = File;
     Draw_Text(Text);
     asm volatile ("cli\nhlt");
 }

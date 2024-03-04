@@ -36,8 +36,8 @@ typedef struct _DriverMan_StorageDriver
     void(*DriverInit)(struct _DriverMan_StorageDriver* MyDriver); // The driver must have the Devices member fully allocated and filled out by the end of this function
     // void(*DriverFree)(struct _DriverMan_StorageDriver* MyDriver); // This function is called when it has been requested that this driver shuts down
     void(*DriverRun)(struct _DriverMan_StorageDriver* MyDriver); // This function runs repeatedly so that the driver can do things like refresh the connected devices
-    bool(*StorageRead)(DriverMan_StorageDevice* Device, size_t NumSectors, uint32_t LBA, void* Dest);
-    bool(*StorageWrite)(DriverMan_StorageDevice* Device, size_t NumSectors, uint32_t LBA, void* Src);
+    bool(*StorageRead)(struct _DriverMan_StorageDriver* MyDriver, int DeviceIdx, size_t NumSectors, uint32_t LBA, void* Dest);
+    bool(*StorageWrite)(struct _DriverMan_StorageDriver* MyDriver, int DeviceIdx, size_t NumSectors, uint32_t LBA, void* Src);
 } DriverMan_StorageDriver;
 
 typedef struct _DriverMan_Manager
@@ -53,8 +53,11 @@ typedef struct _DriverMan_Manager
 
 void DriverMan_Init();
 void DriverMan_Run();
+
 void DriverMan_RegisterStorageDriver(DriverMan_StorageDriver* Driver);
 void DriverMan_GetStorageDrivers(DriverMan_StorageDriver*** OutStorageDrivers, size_t* OutStorageDriversNum);
 void DriverMan_GetStorageDevices(DriverMan_StorageDevice*** OutStorageDevices, size_t* OutStorageDevicesNum);
+void DriverMan_StorageReadFromDevice(DriverMan_StorageDevice* Device, size_t NumSectors, uint32_t LBA, void* Dest);
+void DriverMan_StorageWriteToDevice(DriverMan_StorageDevice* Device, size_t NumSectors, uint32_t LBA, void* Src);
 
 #endif // DRIVER_MAN_H
