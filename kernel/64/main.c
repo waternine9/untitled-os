@@ -16,6 +16,7 @@
 #define FRAMEBUFFER_VM 0xFFFFFFFF90000000
 
 extern int SuspendPIT;
+extern float MSTicks;
 
 volatile uint64_t __attribute__((section(".main64"))) main64()
 {
@@ -38,7 +39,6 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     AllocIdMap(0xB00000, 0x100000, (1ULL << MALLOC_READWRITE_BIT) | (1ULL << MALLOC_USER_SUPERVISOR_BIT));
     Draw_Init(FRAMEBUFFER_VM);
 
-    DriverMan_Init();
 
     ACPIInit();
     PicInit();
@@ -47,6 +47,8 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     IDT_Init();
     LoadIDT();
     ApicInit();
+    
+    DriverMan_Init();
 
     DriverMan_StorageDevice** StorageDevices;
     size_t StorageDevicesCount;
@@ -56,5 +58,6 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) KernelPanic("PANIC: Failed to allocate OS stack!");
     
     SuspendPIT = 0;
+    MSTicks = 0;
     return 0xB00000;
 }

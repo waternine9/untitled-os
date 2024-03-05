@@ -1,6 +1,7 @@
 #include "panic.h"
 #include "../vbe.h"
 #include "draw.h"
+#include "io.h"
 #include <stdarg.h>
 
 static const char LowercaseHexListing[16] = {
@@ -173,15 +174,19 @@ static size_t ParseFmt(char *Dest, size_t WrittenThusFar, size_t *i, const char 
 void FormatStringVaList(char *Out, const char *Format, va_list Args)
 {
     size_t WrittenCount = 0;
-    for (size_t i = 0; Format[i]; i += 1) {
-        if (Format[i] == '%') {
+    for (size_t i = 0; Format[i]; i += 1) 
+    {
+        if (Format[i] == '%') 
+        {
             WrittenCount += ParseFmt(Out, WrittenCount, &i, Format, Args);
         }
-        else {
-            *Out = Format[i];
+        else 
+        {
+            Out[WrittenCount] = Format[i];
             WrittenCount += 1;
         }
     }
+    Out[WrittenCount] = 0;
     return WrittenCount;
 }
 
@@ -189,7 +194,7 @@ void _KernelPanic(int Line, const char* File, const char* Message, ...)
 {
     va_list Args;
     va_start(Args, Message);
-    char Buffer[4096] = { 0 };
+    char Buffer[4096];
     FormatStringVaList(Buffer, Message, Args);
     va_end(Args);
 
@@ -204,11 +209,14 @@ void _KernelPanic(int Line, const char* File, const char* Message, ...)
     Text.col = 0xFFFFFFFF;
     Text.x = 10;
     Text.y = 10;
-    Text.text = Message;
+    Text.text = Buffer;
     Draw_Text(Text);
     Text.x = 10;
     Text.y = 20;
     Text.text = File;
     Draw_Text(Text);
+
+    for (int i = 0;i < 0x10000;i++) IO_Wait();
+
     asm volatile ("cli\nhlt");
 }

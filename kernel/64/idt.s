@@ -154,23 +154,26 @@ extern CHandlerIVT72
     mov rdi, [rdi + 32] ; I didn't forget you!
 %endmacro
 
+global DriverIrqTable
 DriverIrqTable:
-    times 10 dq 0
+    times 10 dq 0x77
 
 %macro DriverIrqS 1
 global DriverIrqS_%1
 DriverIrqS_%1:
     cld
     PUSHA64
-    call qword [DriverIrqTable + 8 * %1]
+    mov rax, [DriverIrqTable + 8 * %1]
+    call rax
     POPA64
-    iretq 
+    iretq
 %endmacro
 
 align 16
 
 PageFaultS:
     pop r12
+    cld
     PUSHA64
     call PageFault
     POPA64

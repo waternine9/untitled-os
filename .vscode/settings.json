@@ -16,6 +16,11 @@
         "initializer_list": "cpp",
         "xstring": "cpp",
         "type_traits": "cpp",
-        "xiosbase": "cpp"
+        "xiosbase": "cpp",
+        "memtools.h": "c",
+        "panic.h": "c",
+        "apic.h": "c",
+        "stdatomic.h": "c",
+        "nvme.h": "c"
     }
 }

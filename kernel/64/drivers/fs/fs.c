@@ -1,6 +1,7 @@
 #include "fs.h"
 #include "../driverman.h"
 #include "../../vmalloc.h"
+#include "../../panic.h"
 
 #define FS_DIRFLAG_SHIFT 0
 #define FS_DIRFLAG_MASK 0b1ULL
@@ -1067,4 +1068,6 @@ DriverMan_FilesystemDriver* CustomFS_GetDriver()
 	OutDriver->FilesysRemove = CustomFS_Driver_Remove;
 	OutDriver->FilesysIsFormatted = CustomFS_Driver_IsFormatted;
 	OutDriver->FilesysFileSize = CustomFS_Driver_FileSize;
+
+	return OutDriver;
 }
