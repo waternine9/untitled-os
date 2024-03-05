@@ -189,7 +189,7 @@ void _KernelPanic(int Line, const char* File, const char* Message, ...)
 {
     va_list Args;
     va_start(Args, Message);
-    char Buffer[4096];
+    char Buffer[4096] = { 0 };
     FormatStringVaList(Buffer, Message, Args);
     va_end(Args);
 

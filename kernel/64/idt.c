@@ -78,7 +78,7 @@ void PageFault(void)
 
 void GeneralProtectionFault(void)
 {
-    KernelPanic("PANIC: GP Fault!");
+    KernelPanic("PANIC: GP Fault! %d", 123);
 }
 
 void UnknownFault(void)
