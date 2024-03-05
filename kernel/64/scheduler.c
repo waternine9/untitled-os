@@ -21,6 +21,14 @@ static void StepRing()
     if (SchedRingIdx >= SchedRingSize) SchedRingIdx = 0;
 }
 
+static void SkipSuspended()
+{
+    while (SchedRing[SchedRingIdx].Suspended)
+    {
+        StepRing();
+    }
+}
+
 SoftTSS* Scheduler_NextProcess(SoftTSS* SaveState)
 {
     if (SchedRingIdx != 0x7FFFFFFF)
@@ -47,10 +55,7 @@ SoftTSS* Scheduler_NextProcess(SoftTSS* SaveState)
 
     StepRing();
 
-    while (SchedRing[SchedRingIdx].Suspended)
-    {
-        StepRing();
-    }
+    SkipSuspended();
     
     return SchedRing + SchedRingIdx;
 }
@@ -106,7 +111,7 @@ SoftTSS* Scheduler_EndCurrentProcess(bool SkipToStart)
     return SchedRing + SchedRingIdx;
 }
 
-SoftTSS* Scheduler_AddSyscallProcess(uint64_t rip, uint64_t Code, uint64_t rsi, uint64_t Selector)
+void Scheduler_AddSyscallProcess(uint64_t rip, uint64_t Code, uint64_t rsi, uint64_t Selector)
 {
     if ((SchedRingSize % 128) == 127) 
     {
@@ -133,6 +138,4 @@ SoftTSS* Scheduler_AddSyscallProcess(uint64_t rip, uint64_t Code, uint64_t rsi, 
     SchedRing[SchedRingSize].Suspended = 0;
     SchedRing[SchedRingIdx].Suspended = 1;
     SchedRingSize++;
-
-    return &SchedRing[++SchedRingIdx];
 }

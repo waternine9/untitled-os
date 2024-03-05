@@ -9,6 +9,6 @@ void Scheduler_Init();
 SoftTSS* Scheduler_NextProcess(SoftTSS* SaveState);
 SoftTSS* Scheduler_EndCurrentProcess(bool SkipToStart);
 void Scheduler_AddProcess(uint64_t rip, uint64_t Size);
-SoftTSS* Scheduler_AddSyscallProcess(uint64_t rip, uint64_t Code, uint64_t rsi, uint64_t Selector);
+void Scheduler_AddSyscallProcess(uint64_t rip, uint64_t Code, uint64_t rsi, uint64_t Selector);
 
 #endif // SCHEDULER_H

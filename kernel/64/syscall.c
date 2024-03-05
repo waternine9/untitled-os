@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "scheduler.h"
 #include "draw.h"
+#include "panic.h"
 #include "drivers/driverman.h"
 
 #define KEY_QUEUE_SIZE 64

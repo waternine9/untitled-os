@@ -178,13 +178,16 @@ void DriverMan_FilesysFormat(DriverMan_StorageDevice* Device, char* FSName)
     DriverMan_FilesystemDriver* Driver = DriverMan_GetFilesysDriver(FSName);
     if (!Driver) return;
     Driver->FilesysFormat(Driver, Device);
+    Device->FormatType = Driver;
 }
 
 bool DriverMan_FilesysTryFormat(DriverMan_StorageDevice* Device, char* FSName)
 {
     DriverMan_FilesystemDriver* Driver = DriverMan_GetFilesysDriver(FSName);
     if (!Driver) return;
-    return Driver->FilesysTryFormat(Driver, Device);
+    bool Formatted = Driver->FilesysTryFormat(Driver, Device);
+    if (Formatted) Device->FormatType = Driver;
+    return Formatted;
 }
 
 bool DriverMan_FilesysIsFormatted(DriverMan_StorageDevice* Device)
