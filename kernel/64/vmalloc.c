@@ -170,11 +170,11 @@ volatile uint64_t AllocVM(uint64_t Size)
     uint64_t PAddr = 0;
     uint64_t PAddrI = 0;
 
+    if (Size < 0x1000) Size = 0x1000;
     Size /= 0x1000;
-    Size += 1;
 
     uint64_t StoreSize = Size;
-    if (StoreSize & (~(uint64_t)0b1111111111) != 0) StoreSize = (uint64_t)0b1111111111;
+    if (StoreSize > 0b1111111111ULL) StoreSize = (uint64_t)0b1111111111ULL;
 
     uint64_t Size0 = (StoreSize & (uint64_t)0b111) << 9;
     uint64_t Size1 = ((StoreSize & (uint64_t)0b1111111000) >> 3) << 52;
@@ -250,11 +250,11 @@ volatile uint64_t AllocPhys(uint64_t Size)
     uint64_t PAddr = 0;
     uint64_t PAddrI = 0;
 
+    if (Size < 0x1000) Size = 0x1000;
     Size /= 0x1000;
-    Size += 1;
 
     uint64_t StoreSize = Size;
-    if (StoreSize & (~(uint64_t)0b1111111111) != 0) StoreSize = (uint64_t)0b1111111111;
+    if (StoreSize > 0b1111111111ULL) StoreSize = (uint64_t)0b1111111111ULL;
 
     uint64_t Size0 = (StoreSize & (uint64_t)0b111) << 9;
     uint64_t Size1 = ((StoreSize & (uint64_t)0b1111111000) >> 3) << 52;
@@ -310,11 +310,11 @@ volatile uint64_t AllocVMAtPhys(uint64_t pAddr, uint64_t Size)
     uint64_t PAddr = pAddr;
     uint64_t PAddrI = (PAddr - PHYS_TAKEN_START) / 0x1000;
 
+    if (Size < 0x1000) Size = 0x1000;
     Size /= 0x1000;
-    Size += 1;
 
     uint64_t StoreSize = Size;
-    if (StoreSize & (~(uint64_t)0b1111111111) != 0) StoreSize = (uint64_t)0b1111111111;
+    if (StoreSize > 0b1111111111ULL) StoreSize = (uint64_t)0b1111111111ULL;
 
     uint64_t Size0 = (StoreSize & (uint64_t)0b111) << 9;
     uint64_t Size1 = ((StoreSize & (uint64_t)0b1111111000) >> 3) << 52;

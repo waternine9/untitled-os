@@ -95,7 +95,7 @@ void IDT_Init()
         HandlerIRQ8,  HandlerIRQ9,  HandlerIRQ10, HandlerIRQ11,
         HandlerIRQ12, HandlerIRQ13, HandlerIRQ14, HandlerIRQ15,
     };
-    static void (*DriverHandlers[16])() = {
+    static void (*DriverHandlers[10])() = {
         DriverIrqS_0,  
         DriverIrqS_1,  
         DriverIrqS_2,  
@@ -154,8 +154,8 @@ void IDT_Init()
         {
             IDTEntries[i].type_attributes = 0x8E;
             IDTEntries[i].offset_3 = 0xFFFFFFFF;
-            IDTEntries[i].offset_2 = (((uint64_t)DriverHandlers[i] & 0x00000000FFFF0000ULL) >> 16);
-            IDTEntries[i].offset_1 = (((uint64_t)DriverHandlers[i] & 0x000000000000FFFFULL) >> 0);
+            IDTEntries[i].offset_2 = (((uint64_t)DriverHandlers[i - 0x70] & 0x00000000FFFF0000ULL) >> 16);
+            IDTEntries[i].offset_1 = (((uint64_t)DriverHandlers[i - 0x70] & 0x000000000000FFFFULL) >> 0);
             IDTEntries[i].selector = 0x18; // 64-bit code segment is at 0x18 in the GDT
         }
         else if (i == 0x80)
@@ -177,5 +177,4 @@ void IDT_Init()
     }
     *(uint16_t*)0x7E50 = sizeof(IDTEntry) * 256 - 1;
     *(uint64_t*)0x7E52 = (uint64_t)IDTEntries;
-
 }
