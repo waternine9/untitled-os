@@ -53,7 +53,7 @@ volatile uint64_t __attribute__((section(".main64"))) main64()
     DriverMan_StorageDevice** StorageDevices;
     size_t StorageDevicesCount;
     DriverMan_GetStorageDevices(&StorageDevices, &StorageDevicesCount);
-    DriverMan_FilesysFormat(StorageDevices[0], "CustomFS"); 
+    DriverMan_FilesysTryFormat(StorageDevices[0], "CustomFS"); 
 
     if (AllocVMAtStack(0xC00000, 0x100000) == 0) KernelPanic("PANIC: Failed to allocate OS stack!");
     
